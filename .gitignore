@@ -1,0 +1,12 @@
+# Build artifacts
+/bin/
+/goat
+
+# Go test artifacts
+*.test
+*.out
+
+# OS / editor cruft
+.DS_Store
+*.swp
+*.swo
