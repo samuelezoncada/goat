@@ -44,10 +44,10 @@ func (e *Editor) drawStatus() {
 func (e *Editor) drawHints(y int) {
 	e.fillRow(0, e.width, y, hintStyle)
 	var hints string
-	if e.focus == FocusSidebar && e.sidebar.open {
-		hints = " ^Up/^Down Move   Enter Open   Backspace Up   Esc Close   ^B Close   ^Q Exit"
+	if e.focus == FocusBrowser && e.browser.open {
+		hints = " ↑/↓ Move   Enter/→ Open   ← Collapse   ^B Close   ^Q Exit"
 	} else {
-		hints = " ^Q Exit   ^O WriteOut   ^X Cut   ^C Copy   ^V Paste   ^W Search   ^\\ Replace   ^J Justify   ^G Help   ^B Sidebar"
+		hints = " ^Q Exit   ^O WriteOut   ^X Cut   ^C Copy   ^V Paste   ^W Search   ^\\ Replace   ^G Help   ^B Browser   Alt+W CloseTab"
 	}
 	e.putStr(1, y, hints, hintStyle)
 }

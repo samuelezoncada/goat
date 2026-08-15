@@ -17,9 +17,11 @@ type match struct {
 	rel   string // relative to root, used for display/matching
 	score int
 	pos   []int // matched rune indices within rel
+	isDir bool  // heavy dir shown as expandable, not walked into
 }
 
-// skipDirs are directories never indexed, even when not hidden.
+// skipDirs are directories never indexed implicitly; they appear as
+// expandable entries and are only walked when the user opens them.
 var skipDirs = map[string]bool{
 	"node_modules": true, "vendor": true, "target": true, "dist": true,
 	"build": true, "out": true, "bin": true, "obj": true,
@@ -75,34 +77,66 @@ func (e *Editor) cancelPicker() {
 	e.screen.HideCursor()
 }
 
-// buildIndex walks root and collects file paths, skipping hidden and heavy dirs.
+// buildIndex walks root and collects files, recording heavy dirs as
+// expandable entries without walking into them.
 func (p *Picker) buildIndex() {
 	p.files = p.files[:0]
-	root := p.root
-	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	p.indexDir(p.root)
+	sort.Slice(p.files, func(i, j int) bool {
+		return strings.ToLower(p.files[i].rel) < strings.ToLower(p.files[j].rel)
+	})
+}
+
+// indexDir walks dir, appending files to p.files. Heavy subdirectories are
+// recorded as expandable dir matches but are not walked into; they are only
+// indexed when the user opens them (see expandDir).
+func (p *Picker) indexDir(dir string) {
+	filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
 		name := d.Name()
 		if d.IsDir() {
-			if path != root && (strings.HasPrefix(name, ".") || skipDirs[name]) {
+			if path != dir && skipDirs[name] {
+				rel, _ := filepath.Rel(p.root, path)
+				p.files = append(p.files, match{path: path, rel: rel, isDir: true})
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if strings.HasPrefix(name, ".") {
-			return nil
-		}
-		rel, err := filepath.Rel(root, path)
+		rel, err := filepath.Rel(p.root, path)
 		if err != nil {
 			return nil
 		}
 		p.files = append(p.files, match{path: path, rel: rel})
 		return nil
 	})
+}
+
+// expandDir replaces the selected heavy-dir match with its indexed contents,
+// making the files inside searchable. Heavy dirs found within it are recorded
+// as expandable entries in turn.
+func (p *Picker) expandDir() {
+	if p.sel < 0 || p.sel >= len(p.matches) {
+		return
+	}
+	m := p.matches[p.sel]
+	if !m.isDir {
+		return
+	}
+	out := p.files[:0]
+	for _, f := range p.files {
+		if f.path != m.path {
+			out = append(out, f)
+		}
+	}
+	p.files = out
+	p.indexDir(m.path)
 	sort.Slice(p.files, func(i, j int) bool {
 		return strings.ToLower(p.files[i].rel) < strings.ToLower(p.files[j].rel)
 	})
+	p.sel, p.top = 0, 0
+	p.refilter()
 }
 
 // fuzzyScore scores a case-insensitive subsequence match of query against s.
@@ -300,7 +334,7 @@ func (e *Editor) pickerKey(ev *tcell.EventKey) {
 	}
 }
 
-// pickerOpen opens the selected file into a tab.
+// pickerOpen opens the selected file into a tab, or expands a heavy dir.
 func (e *Editor) pickerOpen() {
 	p := e.picker
 	if p == nil {
@@ -310,7 +344,12 @@ func (e *Editor) pickerOpen() {
 		e.cancelPicker()
 		return
 	}
-	path := p.matches[p.sel].path
+	m := p.matches[p.sel]
+	if m.isDir {
+		p.expandDir()
+		return
+	}
+	path := m.path
 	e.cancelPicker()
 	e.focusText()
 	e.openPath(path)
@@ -325,6 +364,7 @@ func (e *Editor) drawPicker() {
 	bg := e.theme.Plain
 	inputStyle := statusStyle
 	selStyle := bg.Reverse(true)
+	dirStyle := e.theme.Type
 
 	// input line at the top of the main area
 	y := e.mainTop()
@@ -358,11 +398,18 @@ func (e *Editor) drawPicker() {
 		}
 		m := p.matches[idx]
 		style := bg
+		if m.isDir {
+			style = dirStyle
+		}
 		if idx == p.sel {
 			style = selStyle
 		}
 		e.fillRow(0, e.width, yy, style)
-		rr := []rune(m.rel)
+		label := m.rel
+		if m.isDir {
+			label += "/"
+		}
+		rr := []rune(label)
 		hl := make(map[int]bool, len(m.pos))
 		for _, i := range m.pos {
 			hl[i] = true
@@ -385,7 +432,7 @@ func (e *Editor) drawPicker() {
 	// footer
 	fy := e.height - 1
 	e.fillRow(0, e.width, fy, hintStyle)
-	e.putStr(1, fy, sprintf(" %d file(s)   ↑/↓ move   Enter open   Esc cancel", len(p.matches)), hintStyle)
+	e.putStr(1, fy, sprintf(" %d item(s)   ↑/↓ move   Enter open/expand   Esc cancel", len(p.matches)), hintStyle)
 
 	// input cursor
 	px := 1 + len([]rune(label)) + p.pos

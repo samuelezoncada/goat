@@ -58,37 +58,94 @@ func TestFuzzyMatchPositions(t *testing.T) {
 	}
 }
 
-func TestBuildIndexSkipsHeavyAndHidden(t *testing.T) {
+func TestBuildIndexShowsHeavyDirsUnexpanded(t *testing.T) {
 	root := t.TempDir()
 	mustMkdir(t, filepath.Join(root, "src", "pkg"))
 	mustMkdir(t, filepath.Join(root, "node_modules", "dep"))
 	mustMkdir(t, filepath.Join(root, ".git", "objects"))
 	mustMkdir(t, filepath.Join(root, "vendor", "x"))
+	mustMkdir(t, filepath.Join(root, ".config"))
 	mustWrite(t, filepath.Join(root, "main.go"), "")
 	mustWrite(t, filepath.Join(root, "src", "pkg", "a.go"), "")
 	mustWrite(t, filepath.Join(root, "node_modules", "dep", "i.js"), "")
 	mustWrite(t, filepath.Join(root, ".git", "objects", "x"), "")
 	mustWrite(t, filepath.Join(root, "vendor", "x", "v.go"), "")
 	mustWrite(t, filepath.Join(root, ".hidden"), "")
+	mustWrite(t, filepath.Join(root, ".config", "settings.json"), "")
 
 	e := &Editor{}
 	p := &Picker{e: e, root: root}
 	p.buildIndex()
 
-	paths := map[string]bool{}
+	files := map[string]bool{}
+	dirs := map[string]bool{}
 	for _, m := range p.files {
-		paths[m.rel] = true
+		if m.isDir {
+			dirs[m.rel] = true
+		} else {
+			files[m.rel] = true
+		}
 	}
-	if !paths["main.go"] {
-		t.Errorf("main.go missing: %v", paths)
+	// hidden files are indexed, heavy dirs are listed but not walked
+	for _, want := range []string{"main.go", "src/pkg/a.go", ".hidden", ".config/settings.json"} {
+		if !files[want] {
+			t.Errorf("file %s missing: %v", want, files)
+		}
 	}
-	if !paths["src/pkg/a.go"] {
-		t.Errorf("src/pkg/a.go missing: %v", paths)
+	for _, want := range []string{"node_modules", ".git", "vendor"} {
+		if !dirs[want] {
+			t.Errorf("heavy dir %s not listed: %v", want, dirs)
+		}
 	}
-	for _, bad := range []string{"node_modules/dep/i.js", ".git/objects/x", "vendor/x/v.go", ".hidden"} {
-		if paths[bad] {
+	for _, bad := range []string{"node_modules/dep/i.js", ".git/objects/x", "vendor/x/v.go"} {
+		if files[bad] {
 			t.Errorf("should not index %q", bad)
 		}
+	}
+}
+
+func TestPickerExpandDirIndexesContents(t *testing.T) {
+	root := t.TempDir()
+	mustMkdir(t, filepath.Join(root, "node_modules", "dep", "nested"))
+	mustWrite(t, filepath.Join(root, "main.go"), "")
+	mustWrite(t, filepath.Join(root, "node_modules", "dep", "i.js"), "")
+	mustWrite(t, filepath.Join(root, "node_modules", "dep", "nested", "deep.js"), "")
+
+	e := &Editor{}
+	p := &Picker{e: e, root: root}
+	p.buildIndex()
+	p.refilter()
+
+	idx := -1
+	for i, m := range p.matches {
+		if m.isDir && m.rel == "node_modules" {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		t.Fatalf("node_modules dir match missing: %v", p.matches)
+	}
+	p.sel = idx
+	p.expandDir()
+
+	files := map[string]bool{}
+	dirs := map[string]bool{}
+	for _, m := range p.files {
+		if m.isDir {
+			dirs[m.rel] = true
+		} else {
+			files[m.rel] = true
+		}
+	}
+	if !files["node_modules/dep/i.js"] {
+		t.Error("i.js should be indexed after expand")
+	}
+	if !files["node_modules/dep/nested/deep.js"] {
+		t.Error("deep.js should be indexed after expand")
+	}
+	if dirs["node_modules"] {
+		t.Error("expanded dir should be removed from matches")
 	}
 }
 

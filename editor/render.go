@@ -81,9 +81,17 @@ func (e *Editor) draw() {
 		e.screen.Show()
 		return
 	}
+	if e.mode == ModeResults {
+		e.drawTabBar()
+		e.drawResults()
+		e.screen.Show()
+		return
+	}
 	e.drawTabBar()
-	e.drawSidebar()
-	e.drawEditor()
+	e.drawBrowser()
+	if e.focus != FocusBrowser {
+		e.drawEditor()
+	}
 	e.drawStatus()
 	e.screen.Show()
 }
@@ -181,11 +189,37 @@ func (e *Editor) drawCursor() {
 	disp := displayCol(line, t.cur.Col)
 	x := e.editorLeft() + e.gutterWidth() + disp - t.left
 	y := e.mainTop() + t.cur.Line - t.top
+	e.screen.HideCursor()
 	if x >= e.editorLeft() && x < e.width && y >= e.mainTop() && y < e.mainTop()+e.mainHeight() {
-		e.screen.ShowCursor(x, y)
-	} else {
-		e.screen.HideCursor()
+		e.drawBlockCursor(line, t.cur.Col, x, y)
 	}
+}
+
+// drawBlockCursor renders a solid reverse-video block at the cursor cell so
+// the cursor stays visible regardless of the terminal's cursor style.
+func (e *Editor) drawBlockCursor(line []rune, col, x, y int) {
+	ch, w := cursorCell(line, col)
+	style := e.theme.Plain.Reverse(true)
+	if ch != '\t' {
+		e.drawCell(x, y, ch, style)
+	}
+	for i := 1; i < w && x+i < e.width; i++ {
+		e.drawCell(x+i, y, ' ', style)
+	}
+}
+
+// cursorCell returns the character to render at rune column col (a space when
+// the cursor is past the end of the line) and its display width.
+func cursorCell(line []rune, col int) (rune, int) {
+	if col < 0 || col >= len(line) {
+		return ' ', 1
+	}
+	r := line[col]
+	w := runeWidth(r)
+	if r == '\t' {
+		w = tabStop - displayCol(line, col)%tabStop
+	}
+	return r, w
 }
 
 // selection returns the normalized selection [sLine,sCol,eLine,eCol], or [-1,...].

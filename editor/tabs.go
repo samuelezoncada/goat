@@ -3,9 +3,9 @@ package editor
 // HasTabs reports whether any buffers are open.
 func (e *Editor) HasTabs() bool { return len(e.tabs) > 0 }
 
-// OpenDir opens a directory in the explorer sidebar.
+// OpenDir opens a directory in the file browser.
 func (e *Editor) OpenDir(path string) {
-	e.sidebar.OpenDir(path)
+	e.browser.OpenDir(path)
 	if !e.HasTabs() {
 		e.newTab()
 	}

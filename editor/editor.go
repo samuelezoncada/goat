@@ -15,19 +15,19 @@ const (
 	ModePrompt
 	ModeHelp
 	ModePicker
+	ModeResults
 )
 
 type Focus int
 
 const (
 	FocusText Focus = iota
-	FocusSidebar
+	FocusBrowser
 )
 
 const (
 	tabBarH   = 1
 	statusH   = 2
-	sidebarW  = 24
 	gutterMin = 4
 )
 
@@ -46,9 +46,15 @@ type Editor struct {
 	msg         string
 	prompt      *Prompt
 	picker      *Picker
-	root        string // project root for the file picker (abs), "" = launch cwd
+	results     *Results
+	symProvider SymbolProvider
+	symLast     symLookup
+	symPending  *symbolEvent // lookup queued until the index build finishes
+	symBuilding bool         // an index build is in flight
+	symRebuild  bool         // a save happened during a build; rebuild after
+	root        string       // project root for the file picker (abs), "" = launch cwd
 	recent      []string
-	sidebar     *Sidebar
+	browser     *Browser
 	theme       *syntax.Theme
 	clip        []rune
 	search      Search
@@ -82,7 +88,7 @@ func New() (*Editor, error) {
 		width:  w,
 		height: h,
 	}
-	e.sidebar = NewSidebar(e)
+	e.browser = NewBrowser(e)
 	e.allocFrame()
 	return e, nil
 }
@@ -116,11 +122,11 @@ func (e *Editor) active() *Tab {
 
 func (e *Editor) quit() { e.running = false }
 
-// focusText returns keyboard focus to the buffer and hides the sidebar.
+// focusText returns keyboard focus to the buffer and hides the browser.
 func (e *Editor) focusText() {
 	e.focus = FocusText
-	if e.sidebar != nil {
-		e.sidebar.open = false
+	if e.browser != nil {
+		e.browser.open = false
 	}
 }
 
@@ -137,16 +143,9 @@ func (e *Editor) mainHeight() int {
 	return e.height - tabBarH - statusH
 }
 
-// editorLeft returns the left edge of the text pane.
-func (e *Editor) editorLeft() int {
-	if e.sidebar.open && e.focus == FocusText {
-		return e.sidebar.width()
-	}
-	if e.sidebar.open {
-		return e.sidebar.width()
-	}
-	return 0
-}
+// editorLeft returns the left edge of the text pane. The browser covers the
+// whole screen while focused, so the text pane always starts at column 0.
+func (e *Editor) editorLeft() int { return 0 }
 
 func (e *Editor) editorWidth() int {
 	w := e.width - e.editorLeft()

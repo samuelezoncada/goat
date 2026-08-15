@@ -95,29 +95,38 @@ func TestTabBarClickSwitch(t *testing.T) {
 	}
 }
 
-func TestSidebarClickOpensFile(t *testing.T) {
+func TestBrowserClickSelectsThenDoubleClickOpens(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "f.go"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	e := &Editor{tabs: []*Tab{NewTab()}, width: 100, height: 30}
-	e.sidebar = NewSidebar(e)
-	e.sidebar.OpenDir(dir)
+	e.browser = NewBrowser(e)
+	e.browser.OpenDir(dir)
 
 	idx := -1
-	for i, en := range e.sidebar.entries {
+	for i, en := range e.browser.entries {
 		if en.name == "f.go" {
 			idx = i
 			break
 		}
 	}
 	if idx < 0 {
-		t.Fatalf("f.go not listed: %+v", e.sidebar.entries)
+		t.Fatalf("f.go not listed: %+v", e.browser.entries)
 	}
-	ev := tcell.NewEventMouse(5, e.mainTop()+1+idx, tcell.Button1, tcell.ModNone)
-	e.handleMouse(ev)
-	if e.sidebar.open {
-		t.Fatal("sidebar should close after opening a file")
+	y := e.mainTop() + 1 + idx
+	// first click selects, does not open
+	e.handleMouse(tcell.NewEventMouse(5, y, tcell.Button1, tcell.ModNone))
+	if !e.browser.open || e.focus != FocusBrowser {
+		t.Fatalf("browser should stay open after select click")
+	}
+	if e.browser.sel != idx {
+		t.Fatalf("sel = %d want %d", e.browser.sel, idx)
+	}
+	// second click within the window opens the file and closes the browser
+	e.handleMouse(tcell.NewEventMouse(5, y, tcell.Button1, tcell.ModNone))
+	if e.browser.open {
+		t.Fatal("browser should close after double-click opening a file")
 	}
 	if len(e.tabs) != 1 || e.tabs[0].name != "f.go" {
 		t.Fatalf("file not opened: %+v", e.tabs)

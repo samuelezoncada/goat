@@ -4,6 +4,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 )
@@ -23,6 +24,8 @@ func (e *Editor) handle(ev tcell.Event) {
 			e.promptKey(ev)
 		case ModePicker:
 			e.pickerKey(ev)
+		case ModeResults:
+			e.resultsKey(ev)
 		default:
 			e.handleNormalKey(ev)
 		}
@@ -39,7 +42,14 @@ func (e *Editor) handle(ev tcell.Event) {
 	case *tcell.EventError:
 		e.statusf("terminal error: %v", ev.Error())
 	case *tcell.EventInterrupt:
-		// highlight-ready wake; the next draw shows fresh spans
+		// highlight-ready wake (nil payload), async symbol results, or a
+		// finished index build
+		switch d := ev.Data().(type) {
+		case symbolEvent:
+			e.onSymbolEvent(d)
+		case buildDone:
+			e.onBuildDone(d)
+		}
 	}
 }
 
@@ -55,7 +65,7 @@ func (e *Editor) handleNormalKey(ev *tcell.EventKey) {
 		return
 	}
 	if ev.Key() == tcell.KeyCtrlB {
-		e.sidebar.toggle()
+		e.browser.toggle()
 		return
 	}
 	t := e.active()
@@ -67,8 +77,8 @@ func (e *Editor) handleNormalKey(ev *tcell.EventKey) {
 	ctrl := mod&tcell.ModCtrl != 0
 	shift := mod&tcell.ModShift != 0
 
-	if e.focus == FocusSidebar && e.sidebar.open {
-		e.sidebarKey(ev)
+	if e.focus == FocusBrowser && e.browser.open {
+		e.browserKey(ev)
 		return
 	}
 
@@ -102,7 +112,9 @@ func (e *Editor) handleNormalKey(ev *tcell.EventKey) {
 	case tcell.KeyCtrlE:
 		t.end()
 	case tcell.KeyCtrlY:
-		t.pgup(e.mainHeight() - 1)
+		t.redo()
+	case tcell.KeyCtrlZ:
+		t.undo()
 	case tcell.KeyCtrlN:
 		t.moveDown()
 	case tcell.KeyCtrlP:
@@ -190,7 +202,9 @@ func (e *Editor) selectMove(fn func(), shift bool) {
 func (e *Editor) altRune(r rune) {
 	switch r {
 	case 's':
-		e.sidebar.toggle()
+		e.browser.toggle()
+	case 'd':
+		e.gotoSymbol()
 	case 't':
 		e.newTab()
 	case 'w':
@@ -221,41 +235,52 @@ func (e *Editor) altRune(r rune) {
 	}
 }
 
-// sidebarKey handles keys while the sidebar has focus.
-func (e *Editor) sidebarKey(ev *tcell.EventKey) {
-	s := e.sidebar
+// browserKey handles keys while the file browser has focus.
+func (e *Editor) browserKey(ev *tcell.EventKey) {
+	b := e.browser
 	switch ev.Key() {
 	case tcell.KeyCtrlQ:
 		e.exit()
 	case tcell.KeyEsc:
-		e.sidebar.toggle()
+		e.browser.toggle()
 	case tcell.KeyCtrlB:
-		s.toggle()
+		b.toggle()
 	case tcell.KeyUp:
-		s.moveUp()
+		b.moveUp()
 	case tcell.KeyDown:
-		s.moveDown()
+		b.moveDown()
 	case tcell.KeyHome:
-		s.home()
+		b.home()
 	case tcell.KeyEnd:
-		s.end()
+		b.end()
 	case tcell.KeyPgUp:
-		for i := 0; i < e.mainHeight()-1 && s.sel > 0; i++ {
-			s.moveUp()
+		for i := 0; i < e.mainHeight()-1 && b.sel > 0; i++ {
+			b.moveUp()
 		}
 	case tcell.KeyPgDn:
-		for i := 0; i < e.mainHeight()-1 && s.sel < len(s.entries)-1; i++ {
-			s.moveDown()
+		for i := 0; i < e.mainHeight()-1 && b.sel < len(b.entries)-1; i++ {
+			b.moveDown()
 		}
 	case tcell.KeyEnter:
-		s.enter()
+		b.enter()
+	case tcell.KeyRight:
+		b.expand()
+	case tcell.KeyLeft:
+		b.collapseOrUp()
 	case tcell.KeyTab:
 		e.focusText()
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
-		s.goUp()
+		b.collapseOrUp()
 	case tcell.KeyRune:
 		if ev.Modifiers()&tcell.ModAlt != 0 && ev.Rune() == 's' {
-			s.toggle()
+			b.toggle()
+			return
+		}
+		switch ev.Rune() {
+		case '+', 'l', 'L':
+			b.expand()
+		case '-', 'h', 'H':
+			b.collapseOrUp()
 		}
 	}
 }
@@ -264,8 +289,8 @@ func (e *Editor) handleMouse(ev *tcell.EventMouse) {
 	x, y := ev.Position()
 	btn := ev.Buttons()
 	if btn&tcell.WheelUp != 0 {
-		if e.focus == FocusSidebar && e.sidebar.open && x < e.sidebar.width() {
-			e.sidebar.top--
+		if e.focus == FocusBrowser && e.browser.open {
+			e.browser.top--
 			return
 		}
 		if t := e.active(); t != nil && t.top > 0 {
@@ -274,8 +299,8 @@ func (e *Editor) handleMouse(ev *tcell.EventMouse) {
 		return
 	}
 	if btn&tcell.WheelDown != 0 {
-		if e.focus == FocusSidebar && e.sidebar.open && x < e.sidebar.width() {
-			e.sidebar.top++
+		if e.focus == FocusBrowser && e.browser.open {
+			e.browser.top++
 			return
 		}
 		if t := e.active(); t != nil {
@@ -287,21 +312,35 @@ func (e *Editor) handleMouse(ev *tcell.EventMouse) {
 		if y < e.mainTop() && e.handleTabBarClick(x) {
 			return
 		}
-		if e.sidebar.open && x < e.sidebar.width() && y >= e.mainTop() {
-			idx := e.sidebar.top + (y - e.mainTop() - 1)
-			if idx >= 0 && idx < len(e.sidebar.entries) {
-				e.sidebar.sel = idx
-				e.focus = FocusSidebar
-				en := e.sidebar.selEntry()
-				if en != nil && !en.isDir && en.name != ".." {
-					e.sidebar.enter()
-				}
-			}
+		if e.browser.open && y >= e.mainTop() {
+			e.handleBrowserClick(y)
 			return
 		}
 		e.focusText()
 		e.clickToCursor(x, y)
 	}
+}
+
+// handleBrowserClick selects a browser row on click; a double-click opens or
+// expands the selected entry.
+func (e *Editor) handleBrowserClick(y int) {
+	b := e.browser
+	idx := b.top + (y - e.mainTop() - 1)
+	if idx < 0 || idx >= len(b.entries) {
+		e.focus = FocusBrowser
+		return
+	}
+	e.focus = FocusBrowser
+	now := time.Now().UnixMilli()
+	if idx == b.lastClickRow && now-b.lastClick < 400 {
+		b.sel = idx
+		b.lastClick = 0
+		b.enter()
+		return
+	}
+	b.sel = idx
+	b.lastClick = now
+	b.lastClickRow = idx
 }
 
 // clickToCursor places the cursor at a clicked cell.
@@ -365,6 +404,9 @@ func (e *Editor) writeTab(t *Tab, path string) {
 		e.statusf("Error writing %s: %v", path, err)
 		return
 	}
+	if e.symProvider != nil {
+		e.startBuild()
+	}
 	e.statusf("Wrote %d lines", t.lineCount())
 }
 
@@ -392,14 +434,14 @@ func (e *Editor) redrawScreen() {
 	e.screen.Sync()
 }
 
-// cycleFocus moves keyboard focus between text and the sidebar.
+// cycleFocus moves keyboard focus between text and the browser.
 func (e *Editor) cycleFocus() {
-	if !e.sidebar.open {
-		e.sidebar.open = true
+	if !e.browser.open {
+		e.browser.open = true
 	}
 	if e.focus == FocusText {
-		e.focus = FocusSidebar
-		e.sidebar.refresh()
+		e.focus = FocusBrowser
+		e.browser.rebuild()
 	} else {
 		e.focusText()
 	}

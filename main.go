@@ -19,7 +19,7 @@ func main() {
 	flag.Parse()
 
 	if flag.NArg() == 0 {
-		// Open the current directory's file list in the sidebar.
+		// Open the current directory's file list in the browser.
 		run(nil)
 		return
 	}

@@ -10,17 +10,17 @@ A nano-inspired terminal text editor written in Go, built on
   Java, Ruby, PHP, Perl, Lua, Bash, PowerShell, SQL, HTML, CSS, JSON, YAML,
   TOML, Markdown, and more
 - Multiple tabs
-- File explorer sidebar
+- Full-screen file browser with tree browsing
 - Undo/redo, search with replace, mouse support, bracketed paste, auto-indent
 
 ## Build & run
 
 ```sh
 go build -o goat .
-./goat                    # empty buffer + explorer sidebar
-./goat main.go            # open a file (sidebar closed)
+./goat                    # empty buffer + file browser
+./goat main.go            # open a file (browser closed)
 ./goat a.go b.go c.go     # multiple tabs
-./goat ./src             # open a folder (explorer sidebar opens)
+./goat ./src             # open a folder (file browser opens)
 ```
 
 ## Keybindings
@@ -49,16 +49,18 @@ Alt+T   New tab             Alt+W  Close tab (prompts to save)
 Click the × on a tab to close it with the mouse
 ^Q      Exit (prompts to save; Alt+Q also exits)
 
-Explorer sidebar
-Ctrl+B / Alt+S  Toggle sidebar
-Alt+Tab     Move focus between text and sidebar
-Enter       Open file (closes sidebar) / enter directory
-Backspace   Go up one directory
+File browser
+Ctrl+B / Alt+S  Toggle browser (full-screen)
+Alt+Tab     Move focus between text and browser
+Enter       Open file (closes browser) / expand dir
+Right or +  Expand dir       Left or -   Collapse / jump to parent
+Backspace   Collapse / jump to parent
 
 Other
 ^G          Help            Meta+A  Select all
 ^P          Find file       ^L      Refresh
 Meta+Z      Undo            Meta+Y  Redo
+Meta+D      Go to definition / usages (toggle), needs universal-ctags
 ```
 
 In the search prompt: `^W` next, `Alt+Q` reverse, `Alt+C` toggles case
@@ -69,14 +71,14 @@ sensitivity, `Esc`/`^X` cancels. During replace: `y` = yes, `n` = no,
 
 ```
 main.go          CLI entry
-editor/          editor core (buffers, tabs, keymap, sidebar, rendering)
+editor/          editor core (buffers, tabs, keymap, browser, rendering)
   buffer.go      Text interface + line-slice implementation
   tab.go         per-document state (cursor, viewport, editing ops)
   undo.go        op-log undo/redo stack
   search.go      forward/reverse search + replace
   render.go      cell-buffered renderer with dirty-cell diffing
   keymap.go      nano keybindings, event loop dispatch
-  sidebar.go     file explorer
+  browser.go      file browser (full-screen tree)
   prompt.go      prompt input state machine
 syntax/          syntax highlighting backed by chroma lexers
   syntax.go      chroma-backed Highlighter (async re-lex, per-line span cache)

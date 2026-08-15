@@ -17,11 +17,11 @@ Tabs: Ctrl+Tab next, Ctrl+Shift+Tab prev, Meta+T new,
 Meta+W or click × to close (prompts to save).
 Exit: ^Q (or Meta+Q), prompts to save.
 
-Sidebar: Ctrl+B/Alt+S toggle, Alt+Tab focus, Enter open (closes),
-Backspace up, Esc close. Navigation stays inside the root folder.
+Browser: Ctrl+B/Alt+S toggle, Alt+Tab focus, Enter open file / expand dir,
+Right or + expand, Left or - collapse, Backspace collapse/up, Tab or Esc close.
 
 Other: ^G this help, ^P find file, Meta+A select all, ^L refresh,
-Meta+Z undo, Meta+Y redo, Alt+Up/Down scroll.
+Meta+D go to definition/usages, ^Z/Alt+Z undo, ^Y/Alt+Y redo, Alt+Up/Down scroll.
 
 Search prompt: ^W next, Alt+Q reverse, Alt+C case, Esc/^X cancel.
 Replace: y yes, n no, a all.
