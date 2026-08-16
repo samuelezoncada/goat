@@ -89,7 +89,7 @@ func TestParseCtags(t *testing.T) {
 	if len(foo) != 1 || foo[0].Line != 4 {
 		t.Fatalf("Foo parsed wrong: %+v", foo)
 	}
-	if !filepath.IsAbs(foo[0].File) || !strings.HasSuffix(foo[0].File, "pkg/a.go") {
+	if !filepath.IsAbs(foo[0].File) || !strings.HasSuffix(foo[0].File, filepath.Join("pkg", "a.go")) {
 		t.Fatalf("Foo file = %q", foo[0].File)
 	}
 	if len(lower["bar"]) != 1 {

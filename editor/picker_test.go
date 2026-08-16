@@ -87,7 +87,12 @@ func TestBuildIndexShowsHeavyDirsUnexpanded(t *testing.T) {
 		}
 	}
 	// hidden files are indexed, heavy dirs are listed but not walked
-	for _, want := range []string{"main.go", "src/pkg/a.go", ".hidden", ".config/settings.json"} {
+	for _, want := range []string{
+		"main.go",
+		filepath.Join("src", "pkg", "a.go"),
+		".hidden",
+		filepath.Join(".config", "settings.json"),
+	} {
 		if !files[want] {
 			t.Errorf("file %s missing: %v", want, files)
 		}
@@ -97,7 +102,11 @@ func TestBuildIndexShowsHeavyDirsUnexpanded(t *testing.T) {
 			t.Errorf("heavy dir %s not listed: %v", want, dirs)
 		}
 	}
-	for _, bad := range []string{"node_modules/dep/i.js", ".git/objects/x", "vendor/x/v.go"} {
+	for _, bad := range []string{
+		filepath.Join("node_modules", "dep", "i.js"),
+		filepath.Join(".git", "objects", "x"),
+		filepath.Join("vendor", "x", "v.go"),
+	} {
 		if files[bad] {
 			t.Errorf("should not index %q", bad)
 		}
@@ -138,10 +147,10 @@ func TestPickerExpandDirIndexesContents(t *testing.T) {
 			files[m.rel] = true
 		}
 	}
-	if !files["node_modules/dep/i.js"] {
+	if !files[filepath.Join("node_modules", "dep", "i.js")] {
 		t.Error("i.js should be indexed after expand")
 	}
-	if !files["node_modules/dep/nested/deep.js"] {
+	if !files[filepath.Join("node_modules", "dep", "nested", "deep.js")] {
 		t.Error("deep.js should be indexed after expand")
 	}
 	if dirs["node_modules"] {
@@ -199,6 +208,11 @@ func TestPickerScoreTiebreakByMRU(t *testing.T) {
 
 func TestRememberDedupCap(t *testing.T) {
 	e := &Editor{}
+	// remember stores the absolute path, so mirror that in expectations
+	absJoin := func(parts ...string) string {
+		p, _ := filepath.Abs(filepath.Join(parts...))
+		return p
+	}
 	for i := 0; i < 40; i++ {
 		e.remember(filepath.Join("/a", itoa(i)))
 	}
@@ -206,7 +220,7 @@ func TestRememberDedupCap(t *testing.T) {
 		t.Fatalf("cap: got %d want 30", len(e.recent))
 	}
 	// most recent is first
-	if e.recent[0] != filepath.Join("/a", "39") {
+	if e.recent[0] != absJoin("/a", "39") {
 		t.Fatalf("first %v", e.recent[0])
 	}
 	// re-remembering moves to front without duplicating
@@ -214,7 +228,7 @@ func TestRememberDedupCap(t *testing.T) {
 	if len(e.recent) != 30 {
 		t.Fatalf("dup: got %d", len(e.recent))
 	}
-	if e.recent[0] != filepath.Join("/a", "5") {
+	if e.recent[0] != absJoin("/a", "5") {
 		t.Fatalf("front %v", e.recent[0])
 	}
 }
