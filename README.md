@@ -1,88 +1,127 @@
 # goat
 
 A nano-inspired terminal text editor written in Go, built on
-[tcell](https://github.com/gdamore/tcell). Features:
+[tcell](https://github.com/gdamore/tcell).
 
-- Nano-compatible keybindings (`^X` exit, `^O` save, `^W` search, `^\` replace,
-  `^K`/`^U` cut/paste, `^G` help, ...)
-- Syntax highlighting for 200+ languages via [chroma](https://github.com/alecthomas/chroma)
-  (a Go port of Pygments), including Go, Rust, Python, JS/TS, C/C++, C#,
-  Java, Ruby, PHP, Perl, Lua, Bash, PowerShell, SQL, HTML, CSS, JSON, YAML,
-  TOML, Markdown, and more
-- Multiple tabs
-- Full-screen file browser with tree browsing
-- Undo/redo, search with replace, mouse support, bracketed paste, auto-indent
+## Features
 
-## Build & run
+- Nano-compatible keybindings (`^X` exit, `^O`/`^S` save, `^W` search, `^\` replace,
+  `^K`/`^U` cut/paste, `^Z`/`^Y` undo/redo, `^G` help)
+- Syntax highlighting for 200+ languages via
+  [chroma](https://github.com/alecthomas/chroma) (a Go port of Pygments)
+- Multiple tabs, full-screen file browser with tree browsing, fuzzy file finder
+- Go to definition / usages via [universal-ctags](https://github.com/universal-ctags/ctags)
+- Mouse support: click, click+drag selection, double-click word select
+- Undo/redo, search with replace, bracketed paste, auto-indent
 
-Requires Go 1.24+. Build with:
+## Contents
+
+- [Installation](#installation)
+- [Quick start](#quick-start)
+- [Keybindings](#keybindings)
+- [Find definition / usages](#find-definition--usages)
+- [Architecture](#architecture)
+- [Development](#development)
+- [License](#license)
+
+## Installation
+
+### Requirements
+
+- **Go 1.24+** to build from source
+- A **256-color terminal with mouse support** (most do — see
+  [Terminal setup](#terminal-setup))
+- **[universal-ctags](https://github.com/universal-ctags/ctags)** — optional,
+  only needed for `Alt+D` (find definition / usages)
+
+### From source
 
 ```sh
-make build                 # builds bin/goat with the version stamped in
+make build        # builds bin/goat with the version stamped in
 # or
 go build -o goat .
+```
+
+`go install .` (or `make install`) installs goat onto your Go path. Prebuilt
+binaries for Linux, macOS, and Windows are attached to every
+[GitHub release](https://github.com/samuelezoncada/goat/releases).
+
+### Terminal setup
+
+- Most 256-color terminals work out of the box.
+- Under **tmux**, enable the mouse with `set -g mouse on` so click and drag
+  selection work.
+- Files are saved with **LF** line endings (CRLF files are normalized on save).
+
+## Quick start
+
+```sh
 ./goat                    # empty buffer + file browser
 ./goat main.go            # open a file (browser closed)
 ./goat a.go b.go c.go     # multiple tabs
-./goat ./src             # open a folder (file browser opens)
-./goat --version         # print the version
+./goat ./src              # open a folder (file browser opens)
+./goat --version          # print the version
 ```
-
-Install to your Go path with `go install .` (or `make install`). Prebuilt
-binaries for Linux/macOS/Windows are attached to each GitHub release.
-
-## Requirements & notes
-
-- A 256-color terminal with mouse support (most do). Under tmux, enable the
-  mouse with `set -g mouse on` so click/drag selection works.
-- `Alt+D` (find definition/usages) needs [universal-ctags](https://github.com/universal-ctags/ctags)
-  installed (`apt install universal-ctags` / `brew install universal-ctags`);
-  everything else works without it.
-- Files are saved with LF line endings (CRLF files are normalized on save).
 
 ## Keybindings
 
 ```
-Movement              Editing
-^A/^E   Home/End      ^K / ^X   Cut line/selection
-^B/^F   Left/Right    ^U / ^V   Paste
-^N/^P   Down/Up       ^O / ^S   Save (Write Out)
-^Y      Page Up       ^R        Read File
-^W      Search        ^D        Delete forward
-^\      Replace       ^H        Backspace
-Alt+Arrows or Ctrl+Arrows  Word   ^J  Justify
-                      ^I        Tab / auto-indent
+Movement            Editing
+^A/^E  Home/End     ^K / ^X  Cut line/selection
+^B/^F  Left/Right   ^U / ^V  Paste
+^N/^P  Down/Up      ^O / ^S  Save
+^Y     Page Up      ^R       Read file
+Arrows Move         ^W       Search
+^Left/^Right  Word  ^\       Replace
+                    ^D       Delete forward
+                    ^H       Backspace
+                    ^J       Justify
+                    ^I       Tab / auto-indent
+                    Enter    Newline
 
 Select
-Shift+Arrows / Home/End/PgUp/PgDn  Extend selection
-Alt+Space      Set/clear selection mark at cursor
-^C             Copy selection
-^K / ^X        Cut selection      Esc   Clear selection
-Meta+A         Select all
+Shift+Arrows / Home/End/PgUp/PgDn   Extend selection
+Alt+Space     Mark on / off         Esc   Clear
+^C            Copy selection
+^K / ^X       Cut selection
+Alt+A         Select all
 
 Tabs
-Ctrl+Tab / Ctrl+Shift+Tab   Next/Prev tab
-Alt+T   New tab             Alt+W  Close tab (prompts to save)
-Click the × on a tab to close it with the mouse
-^Q      Exit (prompts to save; Alt+Q also exits)
+Ctrl+Tab / Ctrl+Shift+Tab   Next / previous tab
+Alt+T    New tab            Alt+W   Close tab (prompts to save)
+Click ×  Close tab          ^Q      Exit (Alt+Q also exits)
 
 File browser
 Ctrl+B / Alt+S  Toggle browser (full-screen)
-Alt+Tab     Move focus between text and browser
-Enter       Open file (closes browser) / expand dir
-Right or +  Expand dir       Left or -   Collapse / jump to parent
-Backspace   Collapse / jump to parent
+Alt+Tab         Move focus between text and browser
+Enter           Open file (closes browser) / expand dir
+Right or +      Expand dir
+Left or -       Collapse / jump to parent
+Backspace       Collapse / jump to parent
 
 Other
-^G          Help            Meta+A  Select all
-^P          Find file       ^L      Refresh
-Meta+Z      Undo            Meta+Y  Redo
-Meta+D      Go to definition / usages (toggle), needs universal-ctags
+^G  Help                ^L  Refresh screen
+^P  Find file           ^Z / Alt+Z  Undo
+Alt+D  Go to definition / usages    ^Y / Alt+Y  Redo
 ```
 
 In the search prompt: `^W` next, `Alt+Q` reverse, `Alt+C` toggles case
-sensitivity, `Esc`/`^X` cancels. During replace: `y` = yes, `n` = no,
-`a` = all.
+sensitivity, `Esc`/`^X` cancels. During replace: `y` yes, `n` no, `a` all.
+
+## Find definition / usages
+
+Press `Alt+D` on a symbol to jump to its definition; press it again (or while
+the results list is open) to toggle to all usages. This needs
+[universal-ctags](https://github.com/universal-ctags/ctags) on your `PATH` —
+everything else in goat works without it.
+
+Install universal-ctags:
+
+| Platform  | Command / steps                                                                                     |
+|-----------|-----------------------------------------------------------------------------------------------------|
+| Debian/Ubuntu | `apt install universal-ctags`                                                                     |
+| macOS     | `brew install universal-ctags`                                                                      |
+| Windows   | `choco install universal-ctags -y`, **or** download the prebuilt zip from the [`ctags-win32`](https://github.com/universal-ctags/ctags-win32) releases, extract it, and add that folder to `PATH` |
 
 ## Architecture
 
@@ -95,7 +134,10 @@ editor/          editor core (buffers, tabs, keymap, browser, rendering)
   search.go      forward/reverse search + replace
   render.go      cell-buffered renderer with dirty-cell diffing
   keymap.go      nano keybindings, event loop dispatch
-  browser.go      file browser (full-screen tree)
+  browser.go     file browser (full-screen tree)
+  picker.go      fuzzy file finder
+  symbols.go     find definition/usages (ctags-backed SymbolProvider)
+  results.go     definitions/usages overlay
   prompt.go      prompt input state machine
 syntax/          syntax highlighting backed by chroma lexers
   syntax.go      chroma-backed Highlighter (async re-lex, per-line span cache)
@@ -109,11 +151,19 @@ buffer is re-lexed in a background goroutine (debounced) and per-line spans are
 cached, so keystrokes stay instant and the renderer only rewrites changed
 cells. Language detection uses chroma's filename/shebang matching.
 
-## Tests
+## Development
 
 ```sh
-go test ./...   # buffer ops, undo/redo, search/replace, chroma highlighting, detection
+make test        # go test ./...
+make test-race   # go test -race ./...
+make vet         # go vet ./...
+make build       # build bin/goat with the version stamped in
+make release     # cross-compile release tarballs into dist/
 ```
+
+Tests cover buffer ops, undo/redo, search/replace, mouse selection, the file
+browser, the ctags parser, and chroma highlighting. CI runs vet + tests on
+Linux, macOS, and Windows (including the live ctags test).
 
 ## License
 

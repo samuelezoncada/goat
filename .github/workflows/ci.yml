@@ -16,6 +16,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: Install universal-ctags (Windows)
+        if: runner.os == 'Windows'
+        run: choco install universal-ctags -y
       - name: Vet
         run: go vet ./...
       - name: Test
