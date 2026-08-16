@@ -10,13 +10,22 @@ import (
 
 const banner = `goat - a nano-inspired terminal text editor`
 
+// version is stamped at build time via -ldflags "-X main.version=...".
+var version = "dev"
+
 func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [options] [file...]\n", os.Args[0])
 		fmt.Fprintln(flag.CommandLine.Output(), banner)
 		flag.PrintDefaults()
 	}
+	printVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *printVersion {
+		fmt.Printf("goat %s\n", version)
+		return
+	}
 
 	if flag.NArg() == 0 {
 		// Open the current directory's file list in the browser.

@@ -43,6 +43,10 @@ type UndoStack struct {
 	redoS []*op
 }
 
+// maxUndo bounds the undo history so long sessions don't grow memory without
+// limit; the oldest ops are dropped first.
+const maxUndo = 2000
+
 func (s *UndoStack) push(o *op) {
 	if o.kind == opInsert && len(s.undoS) > 0 {
 		last := s.undoS[len(s.undoS)-1]
@@ -54,6 +58,9 @@ func (s *UndoStack) push(o *op) {
 		}
 	}
 	s.undoS = append(s.undoS, o)
+	if len(s.undoS) > maxUndo {
+		s.undoS = s.undoS[1:]
+	}
 	s.redoS = nil
 }
 

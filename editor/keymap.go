@@ -105,8 +105,6 @@ func (e *Editor) handleNormalKey(ev *tcell.EventKey) {
 		e.redrawScreen()
 	case tcell.KeyCtrlJ:
 		e.justify()
-	case tcell.KeyCtrlT:
-		e.statusf("Spell check not implemented")
 	case tcell.KeyCtrlA:
 		t.home()
 	case tcell.KeyCtrlE:

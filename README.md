@@ -15,13 +15,30 @@ A nano-inspired terminal text editor written in Go, built on
 
 ## Build & run
 
+Requires Go 1.24+. Build with:
+
 ```sh
+make build                 # builds bin/goat with the version stamped in
+# or
 go build -o goat .
 ./goat                    # empty buffer + file browser
 ./goat main.go            # open a file (browser closed)
 ./goat a.go b.go c.go     # multiple tabs
 ./goat ./src             # open a folder (file browser opens)
+./goat --version         # print the version
 ```
+
+Install to your Go path with `go install .` (or `make install`). Prebuilt
+binaries for Linux/macOS/Windows are attached to each GitHub release.
+
+## Requirements & notes
+
+- A 256-color terminal with mouse support (most do). Under tmux, enable the
+  mouse with `set -g mouse on` so click/drag selection works.
+- `Alt+D` (find definition/usages) needs [universal-ctags](https://github.com/universal-ctags/ctags)
+  installed (`apt install universal-ctags` / `brew install universal-ctags`);
+  everything else works without it.
+- Files are saved with LF line endings (CRLF files are normalized on save).
 
 ## Keybindings
 

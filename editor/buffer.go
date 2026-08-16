@@ -22,7 +22,13 @@ func newText(content []byte) *lineSlice {
 	text := &lineSlice{}
 	text.lines = make([][]rune, 0, 16)
 	for _, ln := range strings.Split(string(content), "\n") {
-		text.lines = append(text.lines, []rune(ln))
+		// Strip a trailing CR so CRLF files render cleanly; saves normalize
+		// the file to LF.
+		line := []rune(ln)
+		if n := len(line); n > 0 && line[n-1] == '\r' {
+			line = line[:n-1]
+		}
+		text.lines = append(text.lines, line)
 	}
 	return text
 }

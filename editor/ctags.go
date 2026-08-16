@@ -43,7 +43,7 @@ func (c *ctagsIndex) Ready() bool {
 func (c *ctagsIndex) Build() error {
 	exe, err := exec.LookPath("ctags")
 	if err != nil {
-		return fmt.Errorf("universal-ctags not installed (install it or rebuild with a different SymbolProvider)")
+		return fmt.Errorf("find-definition needs universal-ctags; install it (e.g. apt install universal-ctags or brew install universal-ctags)")
 	}
 	root, err := filepath.Abs(c.root)
 	if err != nil {
