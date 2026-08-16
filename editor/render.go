@@ -195,18 +195,21 @@ func (e *Editor) drawCursor() {
 	}
 }
 
-// drawBlockCursor renders a solid reverse-video block at the cursor cell so
-// the cursor stays visible regardless of the terminal's cursor style.
+// drawBlockCursor renders a solid block at the cursor cell using an explicit
+// high-contrast background, so the cursor stays visible regardless of the
+// terminal's default colors or reverse-video support.
 func (e *Editor) drawBlockCursor(line []rune, col, x, y int) {
 	ch, w := cursorCell(line, col)
-	style := e.theme.Plain.Reverse(true)
 	if ch != '\t' {
-		e.drawCell(x, y, ch, style)
+		e.drawCell(x, y, ch, blockCursorStyle)
 	}
 	for i := 1; i < w && x+i < e.width; i++ {
-		e.drawCell(x+i, y, ' ', style)
+		e.drawCell(x+i, y, ' ', blockCursorStyle)
 	}
 }
+
+// blockCursorStyle is black text on a bright yellow block.
+var blockCursorStyle = tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.NewHexColor(0xE5C07B))
 
 // cursorCell returns the character to render at rune column col (a space when
 // the cursor is past the end of the line) and its display width.

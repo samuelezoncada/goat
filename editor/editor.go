@@ -63,6 +63,11 @@ type Editor struct {
 	exitIdx     int
 	pasteActive bool
 	pasteBuf    []rune
+	mouseDown   bool  // left mouse button held
+	mouseDrag   bool  // the cursor moved since press (click vs drag)
+	mouseAnchor Pos   // position where the drag started
+	mouseLast   int64 // ms timestamp of the last text click (double-click)
+	mouseLine   int   // line of the last text click
 	width       int
 	height      int
 	frame       [][]frameCell

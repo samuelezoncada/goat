@@ -52,7 +52,7 @@ func TestDrawCursorBlock(t *testing.T) {
 	if string(cell.Runes) != "F" {
 		t.Fatalf("cursor cell runes = %q want F", cell.Runes)
 	}
-	if cell.Style != e.theme.Plain.Reverse(true) {
-		t.Fatalf("cursor cell style = %+v want reversed", cell.Style)
+	if cell.Style != blockCursorStyle {
+		t.Fatalf("cursor cell style = %+v want block cursor style", cell.Style)
 	}
 }

@@ -312,13 +312,72 @@ func (e *Editor) handleMouse(ev *tcell.EventMouse) {
 		if y < e.mainTop() && e.handleTabBarClick(x) {
 			return
 		}
-		if e.browser.open && y >= e.mainTop() {
+		if e.browser != nil && e.browser.open && y >= e.mainTop() {
 			e.handleBrowserClick(y)
 			return
 		}
-		e.focusText()
-		e.clickToCursor(x, y)
+		if e.mouseDown {
+			e.handleTextMouseDrag(x, y)
+		} else {
+			e.handleTextMousePress(x, y)
+		}
+		return
 	}
+	if btn == tcell.ButtonNone && e.mouseDown {
+		// left-button release (ButtonNone is also used for hover, which is
+		// only meaningful while nothing is held)
+		if !e.mouseDrag {
+			e.activeMarkClear()
+		}
+		e.mouseDown = false
+		e.mouseDrag = false
+	}
+}
+
+// activeMarkClear clears the current tab's selection without moving the cursor.
+func (e *Editor) activeMarkClear() {
+	if t := e.active(); t != nil {
+		t.mark = nil
+	}
+}
+
+// handleTextMousePress handles a left-button press in the text area: a plain
+// click moves the cursor, a double-click on the same line selects the word,
+// and a held button starts a drag selection.
+func (e *Editor) handleTextMousePress(x, y int) {
+	e.focusText()
+	t := e.active()
+	if t == nil {
+		return
+	}
+	e.clickToCursor(x, y)
+	e.mouseAnchor = t.cur
+
+	now := time.Now().UnixMilli()
+	if now-e.mouseLast < 400 && e.mouseLine == t.cur.Line {
+		// double-click: select the word under the cursor
+		start, end := wordRange(t.line(t.cur.Line), t.cur.Col)
+		t.mark = &Pos{Line: t.cur.Line, Col: start}
+		t.cur.Col = end
+		t.destCol = end
+		e.mouseLast = 0 // don't treat the next click as a triple-click
+		e.mouseDown = false
+		return
+	}
+	e.mouseLast = now
+	e.mouseLine = t.cur.Line
+	e.mouseDown = true
+	e.mouseDrag = false
+	if t.mark == nil {
+		m := t.cur
+		t.mark = &m
+	}
+}
+
+// handleTextMouseDrag extends the selection while the left button is held.
+func (e *Editor) handleTextMouseDrag(x, y int) {
+	e.clickToCursor(x, y)
+	e.mouseDrag = true
 }
 
 // handleBrowserClick selects a browser row on click; a double-click opens or

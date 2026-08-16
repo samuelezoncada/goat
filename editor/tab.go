@@ -327,6 +327,28 @@ func isWord(r rune) bool {
 	return r == '_' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
 }
 
+// wordRange returns the rune-column span [start, end) of the word containing
+// col. When col is not on a word character, both bounds equal col.
+func wordRange(line []rune, col int) (int, int) {
+	if len(line) == 0 {
+		return col, col
+	}
+	if col < 0 {
+		col = 0
+	}
+	if col > len(line) {
+		col = len(line)
+	}
+	start, end := col, col
+	for start > 0 && isWord(line[start-1]) {
+		start--
+	}
+	for end < len(line) && isWord(line[end]) {
+		end++
+	}
+	return start, end
+}
+
 func (t *Tab) pgup(viewH int) {
 	for i := 0; i < viewH && t.cur.Line > 0; i++ {
 		t.cur.Line--
