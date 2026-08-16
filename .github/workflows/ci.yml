@@ -16,9 +16,16 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Install universal-ctags (Windows)
-        if: runner.os == 'Windows'
-        run: choco install universal-ctags -y
+      # macOS ships a BSD ctags that can't parse our flags; all platforms
+      # need universal-ctags so TestCtagsLive runs for real.
+      - name: Install universal-ctags
+        shell: bash
+        run: |
+          case "${{ runner.os }}" in
+            Linux) sudo apt-get update && sudo apt-get install -y universal-ctags ;;
+            macOS) brew install universal-ctags ;;
+            Windows) choco install universal-ctags -y ;;
+          esac
       - name: Vet
         run: go vet ./...
       - name: Test

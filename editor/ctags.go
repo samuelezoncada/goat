@@ -58,7 +58,14 @@ func (c *ctagsIndex) Build() error {
 	out, err := cmd.CombinedOutput()
 	idx, lower := parseCtags(out, root)
 	if err != nil && len(idx) == 0 {
-		return fmt.Errorf("ctags failed: %v", err)
+		detail := strings.TrimSpace(string(out))
+		if len(detail) > 300 {
+			detail = detail[:300] + "..."
+		}
+		if detail != "" {
+			return fmt.Errorf("ctags failed (%v); universal-ctags required. output: %s", err, detail)
+		}
+		return fmt.Errorf("ctags failed (%v); universal-ctags required", err)
 	}
 	c.mu.Lock()
 	c.idx = idx
