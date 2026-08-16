@@ -68,6 +68,7 @@ type Editor struct {
 	mouseAnchor Pos   // position where the drag started
 	mouseLast   int64 // ms timestamp of the last text click (double-click)
 	mouseLine   int   // line of the last text click
+	helpTop     int   // scroll offset for the help page
 	width       int
 	height      int
 	frame       [][]frameCell

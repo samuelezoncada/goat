@@ -19,7 +19,7 @@ func (e *Editor) handle(ev tcell.Event) {
 	case *tcell.EventKey:
 		switch e.mode {
 		case ModeHelp:
-			e.mode = ModeNormal
+			e.helpKey(ev)
 		case ModePrompt:
 			e.promptKey(ev)
 		case ModePicker:
@@ -90,7 +90,7 @@ func (e *Editor) handleNormalKey(ev *tcell.EventKey) {
 	case tcell.KeyCtrlR:
 		e.readFile()
 	case tcell.KeyCtrlG:
-		e.mode = ModeHelp
+		e.openHelp()
 	case tcell.KeyCtrlW:
 		e.beginSearch()
 	case tcell.KeyCtrlBackslash:
@@ -241,6 +241,8 @@ func (e *Editor) browserKey(ev *tcell.EventKey) {
 	switch ev.Key() {
 	case tcell.KeyCtrlQ:
 		e.exit()
+	case tcell.KeyCtrlG:
+		e.openHelp()
 	case tcell.KeyEsc:
 		e.browser.toggle()
 	case tcell.KeyCtrlB:

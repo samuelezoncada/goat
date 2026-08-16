@@ -45,7 +45,7 @@ func (e *Editor) drawHints(y int) {
 	e.fillRow(0, e.width, y, hintStyle)
 	var hints string
 	if e.focus == FocusBrowser && e.browser.open {
-		hints = " ↑/↓ Move   Enter/→ Open   ← Collapse   ^B Close   ^Q Exit"
+		hints = " ↑/↓ Move   Enter/→ Open   ← Collapse   ^B Close   ^G Help   ^Q Exit"
 	} else {
 		hints = " ^Q Exit   ^O WriteOut   ^X Cut   ^C Copy   ^V Paste   ^W Search   ^\\ Replace   ^G Help   ^B Browser   Alt+W CloseTab"
 	}
