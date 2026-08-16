@@ -29,17 +29,13 @@ release:
 		"linux arm64 linux_arm64" \
 		"darwin amd64 darwin_amd64" \
 		"darwin arm64 darwin_arm64" \
-		"windows amd64 windows_amd64" \
-		"windows arm64 windows_arm64"; do \
+		"windows amd64 windows_amd64.exe" \
+		"windows arm64 windows_arm64.exe"; do \
 		set -- $$target; \
 		os=$$1; arch=$$2; name=$$3; \
-		ext=; if [ "$$os" = "windows" ]; then ext=.exe; fi; \
-		GOOS=$$os GOARCH=$$arch go build $(LDFLAGS) -o dist/goat-$$name$$ext .; \
-		if [ "$$os" = "windows" ]; then \
-			cd dist && zip -q goat-$$name.zip goat-$$name$$ext && rm goat-$$name$$ext && cd ..; \
-		else \
-			tar -C dist -czf dist/goat-$$name.tar.gz goat-$$name && rm dist/goat-$$name; \
-		fi; \
+		GOOS=$$os GOARCH=$$arch go build $(LDFLAGS) -o dist/goat-$$name .; \
+		tar -C dist -czf dist/goat-$${name%.exe}.tar.gz goat-$$name; \
+		rm dist/goat-$$name; \
 	done
 	@ls -la dist
 
