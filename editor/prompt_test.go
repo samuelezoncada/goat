@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
+
+	"goat/syntax"
 )
 
 func TestPromptCtrlWRepeatsSearch(t *testing.T) {
@@ -59,5 +61,56 @@ func TestPromptCtrlXCancels(t *testing.T) {
 	e.promptKey(ev)
 	if e.mode != ModeNormal || e.prompt != nil || !cancelled {
 		t.Fatalf("prompt not cancelled: mode=%v prompt=%v cancelled=%v", e.mode, e.prompt, cancelled)
+	}
+}
+
+// TestPromptLongInputScrolls guards against the caret and input scrolling
+// off-screen when the prompt text is longer than the terminal width.
+func TestPromptLongInputScrolls(t *testing.T) {
+	scr := tcell.NewSimulationScreen("UTF-8")
+	if err := scr.Init(); err != nil {
+		t.Fatal(err)
+	}
+	scr.SetSize(30, 10)
+	e := &Editor{screen: scr, theme: syntax.DefaultTheme(), width: 30, height: 10}
+	e.allocFrame()
+	e.beginPrompt("Search: ", "", nil, func(string) {})
+	for _, r := range []rune("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") {
+		e.promptKey(tcell.NewEventKey(tcell.KeyRune, r, tcell.ModNone))
+	}
+	e.drawPromptLine()
+	scr.Show()
+	cx, cy, _ := scr.GetCursor()
+	if cy != e.height-2 {
+		t.Fatalf("cursor row = %d want %d (cursor should stay visible)", cy, e.height-2)
+	}
+	if cx < 0 || cx >= e.width {
+		t.Fatalf("cursor col = %d not on screen", cx)
+	}
+	// the caret should sit at the right edge (fully scrolled input)
+	if cx != e.width-1 {
+		t.Fatalf("cursor col = %d want %d", cx, e.width-1)
+	}
+}
+
+func TestPromptInputWideRunesCursor(t *testing.T) {
+	scr := tcell.NewSimulationScreen("UTF-8")
+	if err := scr.Init(); err != nil {
+		t.Fatal(err)
+	}
+	scr.SetSize(40, 10)
+	e := &Editor{screen: scr, theme: syntax.DefaultTheme(), width: 40, height: 10}
+	e.allocFrame()
+	e.beginPrompt("Search: ", "", nil, func(string) {})
+	for _, r := range []rune("日本abc") {
+		e.promptKey(tcell.NewEventKey(tcell.KeyRune, r, tcell.ModNone))
+	}
+	e.drawPromptLine()
+	scr.Show()
+	cx, _, _ := scr.GetCursor()
+	// label "Search: " (8 cells) + two wide CJK runes (2 each = 4) + 3 ascii
+	want := 1 + 8 + 4 + 3
+	if cx != want {
+		t.Fatalf("cursor col = %d want %d", cx, want)
 	}
 }

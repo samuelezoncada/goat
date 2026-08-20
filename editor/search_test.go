@@ -111,6 +111,92 @@ func TestReplaceAll(t *testing.T) {
 	}
 }
 
+// TestReplaceAllContainingNeedle guards against the infinite loop where a
+// replacement that contains the search text re-finds itself after a wrap.
+func TestReplaceAllContainingNeedle(t *testing.T) {
+	tb := newTestTab("cat")
+	e := &Editor{tabs: []*Tab{tb}}
+	e.search.text = "a"
+	e.replaceTo = "aa"
+	tb.cur = Pos{0, 0}
+	e.replaceAll()
+	if got := joinLines(t, tb); got != "caat" {
+		t.Fatalf("got %q", got)
+	}
+	tb2 := newTestTab("aa")
+	e2 := &Editor{tabs: []*Tab{tb2}}
+	e2.search.text = "aa"
+	e2.replaceTo = "a"
+	tb2.cur = Pos{0, 0}
+	e2.replaceAll()
+	if got := joinLines(t, tb2); got != "a" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+// TestReplaceAllDoesNotWrap ensures replace-all processes each occurrence once
+// and does not loop back to matches already replaced before the cursor.
+func TestReplaceAllDoesNotWrap(t *testing.T) {
+	tb := newTestTab("foo foo foo")
+	e := &Editor{tabs: []*Tab{tb}}
+	e.search.text = "foo"
+	e.replaceTo = "x"
+	tb.cur = Pos{0, 0}
+	e.replaceAll()
+	if got := joinLines(t, tb); got != "x x x" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+// TestSearchNonASCII guards against byte-vs-rune column confusion: the search
+// cursor position must be a rune column even on lines with multi-byte runes.
+func TestSearchNonASCII(t *testing.T) {
+	tb := newTestTab("café bar baz")
+	e := &Editor{tabs: []*Tab{tb}}
+	e.search.caseSens = true
+	e.search.text = "bar"
+	tb.cur = Pos{0, 0}
+	if !e.doSearch("bar", 1, true) {
+		t.Fatal("not found")
+	}
+	if tb.cur.Col != 5 {
+		t.Fatalf("cursor col=%d want 5 (rune col of 'bar' after 'café ')", tb.cur.Col)
+	}
+	// reverse search across the same line: from the end finds the second one
+	tb2 := newTestTab("héllo wörld héllo")
+	e2 := &Editor{tabs: []*Tab{tb2}}
+	e2.search.caseSens = true
+	e2.search.text = "héllo"
+	tb2.cur = Pos{0, 17}
+	if !e2.doSearch("héllo", -1, true) {
+		t.Fatal("backward not found")
+	}
+	if tb2.cur.Col != 12 {
+		t.Fatalf("backward cursor col=%d want 12", tb2.cur.Col)
+	}
+}
+
+func TestSearchCaseInsensitiveNonASCII(t *testing.T) {
+	tb := newTestTab("CAFÉ Bar")
+	e := &Editor{tabs: []*Tab{tb}}
+	e.search.caseSens = false
+	e.search.text = "café"
+	tb.cur = Pos{0, 0}
+	if !e.doSearch("café", 1, true) {
+		t.Fatal("not found")
+	}
+	if tb.cur.Col != 0 {
+		t.Fatalf("col=%d want 0", tb.cur.Col)
+	}
+	e.search.text = "bar"
+	if !e.doSearch("bar", 1, false) {
+		t.Fatal("bar not found")
+	}
+	if tb.cur.Col != 5 {
+		t.Fatalf("bar col=%d want 5", tb.cur.Col)
+	}
+}
+
 func TestJustify(t *testing.T) {
 	tb := newTestTab("hello\nworld\n\nrest")
 	e := &Editor{tabs: []*Tab{tb}}

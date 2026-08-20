@@ -26,6 +26,7 @@ type Tab struct {
 	lastScroll Pos
 	mark       *Pos
 	edits      UndoStack
+	savedRev   int // edits.rev at the last save; dirty == (edits.rev != savedRev) after undo/redo
 	lang       *syntax.Language
 	hl         *syntax.Highlighter
 }
@@ -85,6 +86,8 @@ func (t *Tab) saveTo(path string) error {
 	abs, _ := filepath.Abs(path)
 	t.path = abs
 	t.name = filepath.Base(path)
+	t.savedRev = t.edits.rev
+	t.edits.sealed = true
 	t.dirty = false
 	if t.lang == nil {
 		t.lang = syntax.Detect(path, t.firstLine())
@@ -109,6 +112,8 @@ func (t *Tab) invalidate(from int) {
 	}
 }
 
+// setDirty marks the tab modified. Revision bookkeeping for undo/redo lives
+// in UndoStack.push, which is called for every recorded mutation.
 func (t *Tab) setDirty() {
 	if !t.dirty {
 		t.dirty = true
@@ -118,19 +123,45 @@ func (t *Tab) setDirty() {
 // --- editing -------------------------------------------------------------
 
 func (t *Tab) insertRunes(line, col int, s []rune) {
+	if len(s) == 0 {
+		return
+	}
 	o := &op{kind: opInsert, line: line, col: col, text: s, curBefore: t.cur}
 	insertText(t.text, line, col, s)
-	t.cur = Pos{line, col + len([]rune(string(s)))}
+	t.cur = endOfInsert(line, col, s)
+	t.destCol = t.cur.Col
 	o.curAfter = t.cur
 	t.edits.push(o)
 	t.setDirty()
 	t.invalidate(line)
 }
 
+// endOfInsert returns the cursor position just after inserting s at line:col:
+// at the end of the last inserted line when s contains newlines.
+func endOfInsert(line, col int, s []rune) Pos {
+	lastNL := -1
+	for i, r := range s {
+		if r == '\n' {
+			lastNL = i
+		}
+	}
+	if lastNL < 0 {
+		return Pos{line, col + len(s)}
+	}
+	nl := 0
+	for _, r := range s {
+		if r == '\n' {
+			nl++
+		}
+	}
+	return Pos{line + nl, len(s) - lastNL - 1}
+}
+
 func (t *Tab) insertRune(r rune) {
 	o := &op{kind: opInsert, line: t.cur.Line, col: t.cur.Col, text: []rune{r}, curBefore: t.cur}
 	insertText(t.text, t.cur.Line, t.cur.Col, o.text)
 	t.cur.Col++
+	t.destCol = t.cur.Col
 	o.curAfter = t.cur
 	t.edits.push(o)
 	t.setDirty()
@@ -139,8 +170,11 @@ func (t *Tab) insertRune(r rune) {
 
 func (t *Tab) insertNewline() {
 	indent := t.leadingWhitespace(t.line(t.cur.Line))
-	o := &op{kind: opInsert, line: t.cur.Line, col: t.cur.Col, text: []rune{'\n'}, curBefore: t.cur}
-	insertText(t.text, t.cur.Line, t.cur.Col, []rune{'\n'})
+	// Record the newline and the copied indent as a single op so undo removes
+	// both, leaving no stray whitespace.
+	text := append(append([]rune{}, '\n'), indent...)
+	o := &op{kind: opInsert, line: t.cur.Line, col: t.cur.Col, text: text, curBefore: t.cur}
+	insertText(t.text, t.cur.Line, t.cur.Col, text)
 	t.cur.Line++
 	t.cur.Col = len(indent)
 	t.destCol = t.cur.Col
@@ -148,7 +182,6 @@ func (t *Tab) insertNewline() {
 	t.edits.push(o)
 	t.setDirty()
 	t.invalidate(t.cur.Line - 1)
-	insertText(t.text, t.cur.Line, 0, indent)
 }
 
 func (t *Tab) insertTab() { t.insertRune('\t') }
@@ -158,6 +191,7 @@ func (t *Tab) backspace() {
 		rem := deleteText(t.text, t.cur.Line, t.cur.Col-1, 1)
 		o := &op{kind: opDelete, line: t.cur.Line, col: t.cur.Col - 1, text: rem, curBefore: t.cur}
 		t.cur.Col--
+		t.destCol = t.cur.Col
 		o.curAfter = t.cur
 		t.edits.push(o)
 		t.setDirty()
@@ -205,6 +239,7 @@ func (t *Tab) undo() {
 		return
 	}
 	t.applyInverse(o)
+	t.dirty = t.edits.rev != t.savedRev
 }
 
 func (t *Tab) redo() {
@@ -213,6 +248,7 @@ func (t *Tab) redo() {
 		return
 	}
 	t.applyInverse(o.inverse())
+	t.dirty = t.edits.rev != t.savedRev
 }
 
 func (t *Tab) applyInverse(o *op) {
@@ -231,7 +267,6 @@ func (t *Tab) applyInverse(o *op) {
 	}
 	t.cur = o.curBefore
 	t.destCol = t.cur.Col
-	t.setDirty()
 	t.invalidate(o.line)
 }
 
@@ -240,6 +275,7 @@ func (t *Tab) applyInverse(o *op) {
 func (t *Tab) moveLeft() {
 	if t.cur.Col > 0 {
 		t.cur.Col--
+		t.destCol = t.cur.Col
 		return
 	}
 	if t.cur.Line > 0 {
@@ -253,6 +289,7 @@ func (t *Tab) moveRight() {
 	l := t.line(t.cur.Line)
 	if t.cur.Col < len(l) {
 		t.cur.Col++
+		t.destCol = t.cur.Col
 		return
 	}
 	if t.cur.Line+1 < t.lineCount() {
@@ -265,23 +302,25 @@ func (t *Tab) moveRight() {
 func (t *Tab) moveUp() {
 	if t.cur.Line > 0 {
 		t.cur.Line--
-		t.clampCol()
+		t.setColToDest()
 	}
 }
 
 func (t *Tab) moveDown() {
 	if t.cur.Line+1 < t.lineCount() {
 		t.cur.Line++
-		t.clampCol()
+		t.setColToDest()
 	}
 }
 
-func (t *Tab) clampCol() {
-	l := len(t.line(t.cur.Line))
-	if t.cur.Col > l {
+// setColToDest places the cursor at the saved destination column on the
+// current line, clamped to its length, so vertical movement keeps the column.
+func (t *Tab) setColToDest() {
+	if l := len(t.line(t.cur.Line)); t.destCol > l {
 		t.cur.Col = l
+	} else {
+		t.cur.Col = t.destCol
 	}
-	t.destCol = t.cur.Col
 }
 
 func (t *Tab) home() {
@@ -353,14 +392,14 @@ func (t *Tab) pgup(viewH int) {
 	for i := 0; i < viewH && t.cur.Line > 0; i++ {
 		t.cur.Line--
 	}
-	t.clampCol()
+	t.setColToDest()
 }
 
 func (t *Tab) pgdn(viewH int) {
 	for i := 0; i < viewH && t.cur.Line+1 < t.lineCount(); i++ {
 		t.cur.Line++
 	}
-	t.clampCol()
+	t.setColToDest()
 }
 
 // leadingWhitespace returns the indentation prefix of a line.

@@ -370,8 +370,7 @@ func (e *Editor) drawPicker() {
 	y := e.mainTop()
 	e.fillRow(0, e.width, y, inputStyle)
 	label := "> "
-	x := e.putStr(1, y, label+string(p.input), inputStyle)
-	_ = x
+	px := e.drawInputLine(1, y, label, p.input, p.pos, inputStyle)
 
 	// result list
 	listTop := y + 1
@@ -435,7 +434,6 @@ func (e *Editor) drawPicker() {
 	e.putStr(1, fy, sprintf(" %d item(s)   ↑/↓ move   Enter open/expand   Esc cancel", len(p.matches)), hintStyle)
 
 	// input cursor
-	px := 1 + len([]rune(label)) + p.pos
 	if px >= 0 && px < e.width {
 		e.screen.ShowCursor(px, y)
 	} else {

@@ -18,6 +18,32 @@ func TestSelectionCopyCut(t *testing.T) {
 	}
 }
 
+// TestCutEmptyBufferNoop guards against ^K on an empty buffer recording a
+// no-op edit that marks the pristine buffer dirty.
+func TestCutEmptyBufferNoop(t *testing.T) {
+	tb := NewTab()
+	e := &Editor{tabs: []*Tab{tb}, cur: 0}
+	e.cut()
+	if tb.dirty {
+		t.Fatal("cutting an empty buffer should not mark it dirty")
+	}
+	if tb.edits.CanUndo() {
+		t.Fatal("cutting an empty buffer should not record an undo op")
+	}
+	// a zero-width selection must not mark dirty either
+	tb2 := newTestTab("hello")
+	tb2.cur = Pos{0, 2}
+	tb2.mark = &Pos{0, 2}
+	e2 := &Editor{tabs: []*Tab{tb2}, cur: 0}
+	e2.cut()
+	if tb2.dirty {
+		t.Fatal("cutting a zero-width selection should not mark dirty")
+	}
+	if tb2.mark != nil {
+		t.Fatal("cut should still clear a zero-width selection")
+	}
+}
+
 func TestCopyMultiline(t *testing.T) {
 	tb := newTestTab("ab\ncd\nef")
 	e := &Editor{tabs: []*Tab{tb}}

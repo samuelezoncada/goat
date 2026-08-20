@@ -1,8 +1,6 @@
 package editor
 
-import (
-	"strings"
-)
+import "unicode"
 
 // Search holds the active search/replace state.
 type Search struct {
@@ -58,12 +56,8 @@ func (e *Editor) doSearch(needle string, dir int, initial bool) bool {
 	if t == nil || needle == "" {
 		return false
 	}
-	needleFold := needle
-	if !e.search.caseSens {
-		needleFold = strings.ToLower(needle)
-	}
 	start := t.cur
-	line, col, ok := e.scanFrom(t, needleFold, start.Line, start.Col, dir, initial)
+	line, col, ok := e.scanFrom(t, needle, start.Line, start.Col, dir, initial)
 	if !ok {
 		return false
 	}
@@ -73,30 +67,52 @@ func (e *Editor) doSearch(needle string, dir int, initial bool) bool {
 }
 
 func (e *Editor) scanFrom(t *Tab, needle string, startLine, startCol, dir int, initial bool) (int, int, bool) {
+	return e.scanFromWrap(t, needle, startLine, startCol, dir, initial, true)
+}
+
+// scanFromWrap is scanFrom with explicit wrap control. Replace-all scans
+// without wrapping so a replacement that contains the search text cannot loop
+// forever re-finding matches in already-replaced content.
+func (e *Editor) scanFromWrap(t *Tab, needle string, startLine, startCol, dir int, initial bool, wrap bool) (int, int, bool) {
 	n := t.lineCount()
 	if n == 0 || needle == "" {
 		return 0, 0, false
 	}
-	// Iterate n+1 times so a full wrap re-visits the start line; the first
-	// visit is restricted to startCol, the wrap-around pass searches the rest.
-	for k := 0; k <= n; k++ {
+	needleRunes := []rune(needle)
+	if !e.search.caseSens {
+		needleRunes = lowerRunes(needleRunes)
+	}
+	// Iterate n times (n+1 with wrap) so a full wrap re-visits the start line;
+	// the first visit is restricted to startCol, the wrap-around pass searches
+	// the rest.
+	limit := n
+	if wrap {
+		limit = n + 1
+	}
+	for k := 0; k < limit; k++ {
 		var lineIdx int
 		if dir > 0 {
 			lineIdx = startLine + k
-			if lineIdx >= n {
+			if wrap && lineIdx >= n {
 				lineIdx -= n
+			}
+			if lineIdx >= n {
+				continue
 			}
 		} else {
 			lineIdx = startLine - k
-			if lineIdx < 0 {
+			if wrap && lineIdx < 0 {
 				lineIdx += n
+			}
+			if lineIdx < 0 {
+				continue
 			}
 		}
 		onStart := k == 0
-		str := string(t.line(lineIdx))
-		searchStr := str
+		line := t.line(lineIdx)
+		hay := line
 		if !e.search.caseSens {
-			searchStr = strings.ToLower(str)
+			hay = lowerRunes(line)
 		}
 		var pos int
 		if dir > 0 {
@@ -107,34 +123,69 @@ func (e *Editor) scanFrom(t *Tab, needle string, startLine, startCol, dir int, i
 					from = startCol + 1
 				}
 			}
-			if from > len(searchStr) {
-				from = len(searchStr)
-			}
-			pos = strings.Index(searchStr[from:], needle)
-			if pos >= 0 {
-				pos += from
-			}
+			pos = indexRunes(hay, needleRunes, from)
 		} else {
-			end := len(searchStr)
+			end := len(hay)
 			if onStart {
 				end = startCol
 				if !initial {
 					end = startCol - 1
 				}
 			}
-			if end < 0 {
-				continue
-			}
-			if end > len(searchStr) {
-				end = len(searchStr)
-			}
-			pos = strings.LastIndex(searchStr[:end], needle)
+			pos = lastIndexRunes(hay, needleRunes, end)
 		}
 		if pos >= 0 {
 			return lineIdx, pos, true
 		}
 	}
 	return 0, 0, false
+}
+
+// lowerRunes returns runes mapped to lowercase (one-to-one, preserving length).
+func lowerRunes(rs []rune) []rune {
+	out := make([]rune, len(rs))
+	for i, r := range rs {
+		out[i] = unicode.ToLower(r)
+	}
+	return out
+}
+
+// indexRunes returns the rune index of needle in hay at or after from, or -1.
+func indexRunes(hay, needle []rune, from int) int {
+	if from < 0 {
+		from = 0
+	}
+	for i := from; i+len(needle) <= len(hay); i++ {
+		if runesEqual(hay[i:i+len(needle)], needle) {
+			return i
+		}
+	}
+	return -1
+}
+
+// lastIndexRunes returns the rune index of the last needle in hay[:end], or -1.
+func lastIndexRunes(hay, needle []rune, end int) int {
+	if end > len(hay) {
+		end = len(hay)
+	}
+	for i := end - len(needle); i >= 0; i-- {
+		if runesEqual(hay[i:i+len(needle)], needle) {
+			return i
+		}
+	}
+	return -1
+}
+
+func runesEqual(a, b []rune) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (e *Editor) setCursor(line, col int) {
@@ -243,7 +294,10 @@ func (e *Editor) replaceAll() {
 	needle := []rune(e.search.text)
 	to := []rune(e.replaceTo)
 	for {
-		line, col, ok := e.scanFrom(t, e.search.text, t.cur.Line, t.cur.Col, 1, true)
+		// Scan without wrapping: after each replacement the cursor sits just
+		// past the inserted text, so a replacement containing the search text
+		// cannot be re-found and loop forever.
+		line, col, ok := e.scanFromWrap(t, e.search.text, t.cur.Line, t.cur.Col, 1, true, false)
 		if !ok {
 			break
 		}

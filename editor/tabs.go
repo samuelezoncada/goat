@@ -11,6 +11,17 @@ func (e *Editor) OpenDir(path string) {
 	}
 }
 
+// OpenBrowser opens and focuses the file browser at its current root. Used by
+// the CLI when goat is launched without any file arguments.
+func (e *Editor) OpenBrowser() {
+	if e.browser == nil {
+		return
+	}
+	e.browser.open = true
+	e.focus = FocusBrowser
+	e.browser.rebuild()
+}
+
 // NewTab adds an empty buffer.
 func (e *Editor) NewTab() { e.newTab() }
 
@@ -197,6 +208,7 @@ func (e *Editor) doCloseTab() {
 	if len(e.tabs) == 1 {
 		e.tabs = []*Tab{}
 		e.cur = 0
+		t.close()
 		e.newTab()
 		return
 	}

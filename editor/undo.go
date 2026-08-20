@@ -19,6 +19,7 @@ type op struct {
 	new       []rune // replacement text (opReplace)
 	curBefore Pos
 	curAfter  Pos
+	mut       int // number of buffer mutations this op accounts for
 }
 
 func (o *op) inverse() *op {
@@ -39,8 +40,10 @@ func (o *op) inverse() *op {
 }
 
 type UndoStack struct {
-	undoS []*op
-	redoS []*op
+	undoS  []*op
+	redoS  []*op
+	rev    int  // net buffer mutations currently applied (undoable + redoable)
+	sealed bool // the top op must not absorb further inserts (set on save)
 }
 
 // maxUndo bounds the undo history so long sessions don't grow memory without
@@ -48,16 +51,21 @@ type UndoStack struct {
 const maxUndo = 2000
 
 func (s *UndoStack) push(o *op) {
-	if o.kind == opInsert && len(s.undoS) > 0 {
+	if !s.sealed && o.kind == opInsert && len(s.undoS) > 0 {
 		last := s.undoS[len(s.undoS)-1]
 		if last.kind == opInsert && last.line == o.line && o.col == last.col+len(last.text) {
 			last.text = append(last.text, o.text...)
 			last.curAfter = o.curAfter
+			last.mut++
+			s.rev++
 			s.redoS = nil
 			return
 		}
 	}
+	o.mut = 1
 	s.undoS = append(s.undoS, o)
+	s.rev++
+	s.sealed = false
 	if len(s.undoS) > maxUndo {
 		s.undoS = s.undoS[1:]
 	}
@@ -74,6 +82,7 @@ func (s *UndoStack) undo() *op {
 	}
 	o := s.undoS[len(s.undoS)-1]
 	s.undoS = s.undoS[:len(s.undoS)-1]
+	s.rev -= o.mut
 	s.redoS = append(s.redoS, o)
 	return o
 }
@@ -84,6 +93,7 @@ func (s *UndoStack) redo() *op {
 	}
 	o := s.redoS[len(s.redoS)-1]
 	s.redoS = s.redoS[:len(s.redoS)-1]
+	s.rev += o.mut
 	s.undoS = append(s.undoS, o)
 	return o
 }

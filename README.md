@@ -69,9 +69,9 @@ binaries for Linux, macOS, and Windows are attached to every
 Movement            Editing
 ^A/^E  Home/End     ^K / ^X  Cut line/selection
 ^B/^F  Left/Right   ^U / ^V  Paste
-^N/^P  Down/Up      ^O / ^S  Save
-^Y     Page Up      ^R       Read file
-Arrows Move         ^W       Search
+^N     Down         ^O / ^S  Save
+Arrows Move         ^R       Read file
+Alt+Up/Down Scroll  ^W       Search
 ^Left/^Right  Word  ^\       Replace
                     ^D       Delete forward
                     ^H       Backspace
@@ -103,6 +103,7 @@ Other
 ^G  Help                ^L  Refresh screen
 ^P  Find file           ^Z / Alt+Z  Undo
 Alt+D  Go to definition / usages    ^Y / Alt+Y  Redo
+Alt+G  Go to line
 ```
 
 In the search prompt: `^W` next, `Alt+Q` reverse, `Alt+C` toggles case

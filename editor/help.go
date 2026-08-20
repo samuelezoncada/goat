@@ -22,9 +22,9 @@ var helpSections = []helpSection{
 		rows: []helpRow{
 			{"^A / ^E", "Home / End"},
 			{"^B / ^F", "Left / Right"},
-			{"^N / ^P", "Down / Up"},
-			{"^Y", "Page Up"},
+			{"^N", "Down"},
 			{"Arrows", "Move"},
+			{"Alt+Up / Down", "Scroll"},
 			{"^Left / ^Right", "Word"},
 			{"Alt+Left / Right", "Word"},
 		},
@@ -91,9 +91,9 @@ var helpSections = []helpSection{
 			{"Alt+A", "Select all"},
 			{"^L", "Refresh screen"},
 			{"Alt+D", "Definition / usages"},
+			{"Alt+G", "Go to line"},
 			{"^Z / Alt+Z", "Undo"},
 			{"^Y / Alt+Y", "Redo"},
-			{"Alt+Up / Down", "Scroll"},
 		},
 	},
 	{

@@ -115,8 +115,6 @@ func (e *Editor) handleNormalKey(ev *tcell.EventKey) {
 		t.undo()
 	case tcell.KeyCtrlN:
 		t.moveDown()
-	case tcell.KeyCtrlP:
-		t.moveUp()
 	case tcell.KeyCtrlF:
 		t.moveRight()
 	case tcell.KeyCtrlD:
@@ -126,9 +124,17 @@ func (e *Editor) handleNormalKey(ev *tcell.EventKey) {
 	case tcell.KeyEnter:
 		t.insertNewline()
 	case tcell.KeyUp:
-		e.selectMove(t.moveUp, shift)
+		if mod&tcell.ModAlt != 0 {
+			e.scrollUp()
+		} else {
+			e.selectMove(t.moveUp, shift)
+		}
 	case tcell.KeyDown:
-		e.selectMove(t.moveDown, shift)
+		if mod&tcell.ModAlt != 0 {
+			e.scrollDown()
+		} else {
+			e.selectMove(t.moveDown, shift)
+		}
 	case tcell.KeyLeft:
 		if mod&tcell.ModAlt != 0 || ctrl {
 			e.selectMove(t.wordLeft, shift)
@@ -338,6 +344,19 @@ func (e *Editor) handleMouse(ev *tcell.EventMouse) {
 func (e *Editor) activeMarkClear() {
 	if t := e.active(); t != nil {
 		t.mark = nil
+	}
+}
+
+// scrollUp/scrollDown scroll the text viewport without moving the cursor.
+func (e *Editor) scrollUp() {
+	if t := e.active(); t != nil && t.top > 0 {
+		t.top--
+	}
+}
+
+func (e *Editor) scrollDown() {
+	if t := e.active(); t != nil && t.top+1 < t.lineCount() {
+		t.top++
 	}
 }
 
@@ -559,9 +578,12 @@ func (e *Editor) cut() {
 		t.mark = nil
 		removed := deleteRegion(t, sel[0], sel[1], sel[2], sel[3])
 		e.clip = removed
-		o := &op{kind: opDelete, line: sel[0], col: sel[1], text: removed, curBefore: t.cur}
 		t.cur = Pos{sel[0], sel[1]}
 		t.destCol = t.cur.Col
+		if len(removed) == 0 {
+			return
+		}
+		o := &op{kind: opDelete, line: sel[0], col: sel[1], text: removed, curBefore: t.cur}
 		o.curAfter = t.cur
 		t.edits.push(o)
 		t.setDirty()
@@ -581,6 +603,9 @@ func (e *Editor) cut() {
 	e.clip = removed
 	t.cur = Pos{line, 0}
 	t.destCol = 0
+	if len(removed) == 0 {
+		return
+	}
 	o.curAfter = t.cur
 	t.edits.push(o)
 	t.setDirty()

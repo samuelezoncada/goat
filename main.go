@@ -54,5 +54,8 @@ func run(files []string) {
 	if !e.HasTabs() {
 		e.NewTab()
 	}
+	if len(files) == 0 {
+		e.OpenBrowser()
+	}
 	e.Run()
 }

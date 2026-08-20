@@ -40,21 +40,34 @@ func (e *Editor) drawPromptLine() {
 	y := e.height - 2
 	style := statusStyle
 	label := e.prompt.label
-	text := string(e.prompt.input)
-
 	e.fillRow(0, e.width, y, style)
-	x := e.putStr(1, y, label+text, style)
-	_ = x
+	px := e.drawInputLine(1, y, label, e.prompt.input, e.prompt.pos, style)
 	e.drawHints(e.height - 1)
 
 	// cursor in prompt
-	px := 1 + len([]rune(label)) + e.prompt.pos
-	py := y
 	if px >= 0 && px < e.width {
-		e.screen.ShowCursor(px, py)
+		e.screen.ShowCursor(px, y)
 	} else {
 		e.screen.HideCursor()
 	}
+}
+
+// drawInputLine draws label + input on row y starting at x0, scrolling the
+// input horizontally so the caret stays visible, and returns the caret's x.
+func (e *Editor) drawInputLine(x0, y int, label string, input []rune, pos int, style tcell.Style) int {
+	labelW := runeLen(label)
+	curIn := displayCol(input, pos) // caret offset within the input, in cells
+	avail := e.width - x0 - labelW
+	if avail < 1 {
+		avail = 1
+	}
+	scroll := 0
+	if curIn >= avail {
+		scroll = curIn - (avail - 1)
+	}
+	e.putStr(x0, y, label, style)
+	e.putStr(x0+labelW-scroll, y, string(input), style)
+	return x0 + labelW + curIn - scroll
 }
 
 // key handles a key while a prompt is active.

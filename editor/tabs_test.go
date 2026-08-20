@@ -8,6 +8,17 @@ import (
 	"github.com/gdamore/tcell/v2"
 )
 
+func TestOpenBrowserFocusesAndRebuilds(t *testing.T) {
+	e := &Editor{}
+	e.browser = NewBrowser(e)
+	e.browser.open = false
+	e.focus = FocusText
+	e.OpenBrowser()
+	if !e.browser.open || e.focus != FocusBrowser {
+		t.Fatalf("browser not opened/focused: open=%v focus=%v", e.browser.open, e.focus)
+	}
+}
+
 func TestCloseTabCleanNoPrompt(t *testing.T) {
 	tb := newTestTab("hello")
 	tb.path = "/x/a.go"
