@@ -75,18 +75,26 @@ func shebangInterp(line string) string {
 	return base
 }
 
+// maxHighlightBytes disables highlighting for very large buffers: chroma
+// re-lexes the whole buffer, which stops being affordable well before the
+// editor's own file size limit.
+const maxHighlightBytes = 4 << 20
+
 // Highlighter lexes a buffer with chroma in a background goroutine, caching
 // per-line spans so the renderer never blocks on highlighting.
 type Highlighter struct {
-	mu      sync.RWMutex
-	lexer   chroma.Lexer
-	spans   [][]Span
-	text    string
-	version int
-	onReady func()
-	wake    chan struct{}
-	done    chan struct{}
-	wg      sync.WaitGroup
+	mu        sync.RWMutex
+	lexer     chroma.Lexer
+	spans     [][]Span
+	text      string
+	lines     []string // per-line snapshot, reused across invalidations
+	version   int
+	tooBig    bool
+	onReady   func()
+	wake      chan struct{}
+	done      chan struct{}
+	wg        sync.WaitGroup
+	closeOnce sync.Once
 }
 
 // NewHighlighter returns a highlighter for lang; a nil lang renders plain.
@@ -118,26 +126,66 @@ func (h *Highlighter) Close() {
 	if h.lexer == nil {
 		return
 	}
-	close(h.done)
-	h.wg.Wait()
+	h.closeOnce.Do(func() {
+		close(h.done)
+		h.wg.Wait()
+	})
 }
 
-// SetLineCount is kept for API compatibility; chroma lexes whole buffers.
-func (h *Highlighter) SetLineCount(n int) {}
+// TooLarge reports whether highlighting was skipped because the buffer is too
+// big to re-lex.
+func (h *Highlighter) TooLarge() bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.tooBig
+}
 
-// Invalidate snapshots the current buffer text and schedules a re-lex.
+// Invalidate snapshots the buffer and schedules a re-lex. Only lines from
+// `from` on are re-read: the unchanged prefix is reused from the previous
+// snapshot, so a keystroke deep in a large file does not re-convert every
+// line above it.
 func (h *Highlighter) Invalidate(from, count int, getLine func(i int) []rune) {
 	if h.lexer == nil {
 		return
 	}
-	var b strings.Builder
-	for i := 0; i < count; i++ {
-		b.WriteString(string(getLine(i)))
-		if i < count-1 {
-			b.WriteByte('\n')
-		}
+	if from < 0 {
+		from = 0
+	}
+	if from > count {
+		from = count
 	}
 	h.mu.Lock()
+	if cap(h.lines) >= count {
+		h.lines = h.lines[:count]
+	} else {
+		grown := make([]string, count)
+		copy(grown, h.lines)
+		h.lines = grown
+	}
+	total := 0
+	for i := 0; i < count; i++ {
+		if i >= from {
+			h.lines[i] = string(getLine(i))
+		}
+		total += len(h.lines[i]) + 1
+	}
+	if total > maxHighlightBytes {
+		h.tooBig = true
+		h.text = ""
+		h.spans = nil
+		h.version++
+		h.mu.Unlock()
+		return
+	}
+	h.tooBig = false
+	var b strings.Builder
+	b.Grow(total)
+	for i, ln := range h.lines {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(ln)
+	}
 	h.text = b.String()
 	h.version++
 	h.mu.Unlock()
@@ -147,14 +195,29 @@ func (h *Highlighter) Invalidate(from, count int, getLine func(i int) []rune) {
 	}
 }
 
-// Spans returns the cached spans for line i (nil means plain text).
+// Spans returns the cached spans for line i (nil means plain text). Spans are
+// clipped to the line's current length: between an edit and the next re-lex
+// the cache can describe a longer line than the buffer now holds.
 func (h *Highlighter) Spans(i int, line []rune) []Span {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	if i < 0 || i >= len(h.spans) {
 		return nil
 	}
-	return h.spans[i]
+	sp := h.spans[i]
+	n := len(line)
+	for k, s := range sp {
+		if s.Start+s.Len > n {
+			// Return a clipped copy; the cache itself stays untouched.
+			out := make([]Span, 0, len(sp))
+			out = append(out, sp[:k]...)
+			if s.Start < n {
+				out = append(out, Span{Start: s.Start, Len: n - s.Start, Type: s.Type})
+			}
+			return out
+		}
+	}
+	return sp
 }
 
 func (h *Highlighter) loop() {

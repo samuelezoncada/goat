@@ -54,7 +54,6 @@ func OpenTab(path string) (*Tab, error) {
 	t.name = filepath.Base(path)
 	t.lang = syntax.Detect(t.path, t.firstLine())
 	t.hl = syntax.NewHighlighter(t.lang)
-	t.hl.SetLineCount(t.lineCount())
 	t.invalidate(0)
 	return t, nil
 }
@@ -92,8 +91,7 @@ func (t *Tab) saveTo(path string) error {
 	if t.lang == nil {
 		t.lang = syntax.Detect(path, t.firstLine())
 		t.hl = syntax.NewHighlighter(t.lang)
-		t.hl.SetLineCount(t.lineCount())
-		t.invalidate(0)
+			t.invalidate(0)
 	}
 	return nil
 }

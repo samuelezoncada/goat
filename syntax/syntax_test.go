@@ -156,11 +156,12 @@ func TestDetectByShebang(t *testing.T) {
 
 func TestHighlighterCacheLifecycle(t *testing.T) {
 	hl := NewHighlighter(Detect("main.go", ""))
-	hl.Invalidate(0, 1, func(i int) []rune { return []rune("package main") })
+	line := []rune("package main")
+	hl.Invalidate(0, 1, func(i int) []rune { return line })
 	// wait for the background lexer (debounced ~30ms)
 	deadline := time.Now().Add(3 * time.Second)
 	for {
-		if sp := hl.Spans(0, nil); len(sp) > 0 {
+		if sp := hl.Spans(0, line); len(sp) > 0 {
 			if !hasType(sp, TKeyword) && !hasType(sp, TPreproc) {
 				t.Fatalf("no keyword after async lex: %+v", sp)
 			}
