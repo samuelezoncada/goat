@@ -77,9 +77,11 @@ type Span struct {
 	Type       TokenType
 }
 
-// Theme maps token types to terminal styles.
+// Theme maps token types to terminal styles. Match is not a token type: it is
+// the highlight applied to search hits in the viewport.
 type Theme struct {
 	Plain, Comment, String, Number, Keyword, Type, Builtin, Constant, Function, Preproc, Decorator, Variable, Operator, Tag, Attribute, CodeBlock, Heading, Literal, Error tcell.Style
+	Match                                                                                                                                                                  tcell.Style
 }
 
 // Style returns the style for a token type.
@@ -147,5 +149,40 @@ func DefaultTheme() *Theme {
 		Heading:   tcell.StyleDefault.Foreground(tcell.NewHexColor(0xE5C07B)).Bold(true),
 		Literal:   tcell.StyleDefault.Foreground(tcell.NewHexColor(0x98C379)),
 		Error:     tcell.StyleDefault.Foreground(tcell.NewHexColor(0xFF5555)).Bold(true),
+		Match:     tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.NewHexColor(0x61AFEF)),
 	}
+}
+
+// LightTheme returns a theme for light terminal backgrounds.
+func LightTheme() *Theme {
+	return &Theme{
+		Plain:     tcell.StyleDefault.Foreground(tcell.NewHexColor(0x383A42)),
+		Comment:   tcell.StyleDefault.Foreground(tcell.NewHexColor(0x8A8F98)).Italic(true),
+		String:    tcell.StyleDefault.Foreground(tcell.NewHexColor(0x50A14F)),
+		Number:    tcell.StyleDefault.Foreground(tcell.NewHexColor(0xB76B01)),
+		Keyword:   tcell.StyleDefault.Foreground(tcell.NewHexColor(0xA626A4)).Bold(true),
+		Type:      tcell.StyleDefault.Foreground(tcell.NewHexColor(0x0184BC)),
+		Builtin:   tcell.StyleDefault.Foreground(tcell.NewHexColor(0x4078F2)),
+		Function:  tcell.StyleDefault.Foreground(tcell.NewHexColor(0x9A6700)),
+		Constant:  tcell.StyleDefault.Foreground(tcell.NewHexColor(0xCA1243)),
+		Preproc:   tcell.StyleDefault.Foreground(tcell.NewHexColor(0xA626A4)),
+		Decorator: tcell.StyleDefault.Foreground(tcell.NewHexColor(0x4078F2)),
+		Variable:  tcell.StyleDefault.Foreground(tcell.NewHexColor(0xB5197A)),
+		Operator:  tcell.StyleDefault.Foreground(tcell.NewHexColor(0x383A42)),
+		Tag:       tcell.StyleDefault.Foreground(tcell.NewHexColor(0xCA1243)),
+		Attribute: tcell.StyleDefault.Foreground(tcell.NewHexColor(0xB76B01)),
+		CodeBlock: tcell.StyleDefault.Foreground(tcell.NewHexColor(0x0184BC)),
+		Heading:   tcell.StyleDefault.Foreground(tcell.NewHexColor(0x9A6700)).Bold(true),
+		Literal:   tcell.StyleDefault.Foreground(tcell.NewHexColor(0x50A14F)),
+		Error:     tcell.StyleDefault.Foreground(tcell.NewHexColor(0xCA1243)).Bold(true),
+		Match:     tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.NewHexColor(0x4078F2)),
+	}
+}
+
+// ThemeByName returns the named theme, falling back to the dark default.
+func ThemeByName(name string) *Theme {
+	if name == "light" {
+		return LightTheme()
+	}
+	return DefaultTheme()
 }
