@@ -58,6 +58,44 @@ func TestFuzzyMatchPositions(t *testing.T) {
 	}
 }
 
+// newTestPicker builds the file index synchronously (production builds it in
+// the background) and returns a picker over it.
+func newTestPicker(t *testing.T, e *Editor, root string) *Picker {
+	t.Helper()
+	idx := &fileIndex{root: root, expanded: map[string]bool{}}
+	entries := walkFileIndex(root, idx.expanded)
+	sortEntries(entries)
+	idx.entries = entries
+	idx.ready = true
+	e.fileIndex = idx
+	p := &Picker{e: e}
+	e.picker = p
+	p.refilter()
+	return p
+}
+
+// reindex re-walks after an expand, mirroring what startIndex does async.
+func (p *Picker) reindexForTest(t *testing.T) {
+	t.Helper()
+	idx := p.e.fileIndex
+	entries := walkFileIndex(idx.root, idx.expanded)
+	sortEntries(entries)
+	idx.entries = entries
+	p.refilter()
+}
+
+func indexKinds(idx *fileIndex) (files, dirs map[string]bool) {
+	files, dirs = map[string]bool{}, map[string]bool{}
+	for _, m := range idx.entries {
+		if m.isDir {
+			dirs[m.rel] = true
+		} else {
+			files[m.rel] = true
+		}
+	}
+	return files, dirs
+}
+
 func TestBuildIndexShowsHeavyDirsUnexpanded(t *testing.T) {
 	root := t.TempDir()
 	mustMkdir(t, filepath.Join(root, "src", "pkg"))
@@ -74,18 +112,9 @@ func TestBuildIndexShowsHeavyDirsUnexpanded(t *testing.T) {
 	mustWrite(t, filepath.Join(root, ".config", "settings.json"), "")
 
 	e := &Editor{}
-	p := &Picker{e: e, root: root}
-	p.buildIndex()
+	newTestPicker(t, e, root)
 
-	files := map[string]bool{}
-	dirs := map[string]bool{}
-	for _, m := range p.files {
-		if m.isDir {
-			dirs[m.rel] = true
-		} else {
-			files[m.rel] = true
-		}
-	}
+	files, dirs := indexKinds(e.fileIndex)
 	// hidden files are indexed, heavy dirs are listed but not walked
 	for _, want := range []string{
 		"main.go",
@@ -121,9 +150,7 @@ func TestPickerExpandDirIndexesContents(t *testing.T) {
 	mustWrite(t, filepath.Join(root, "node_modules", "dep", "nested", "deep.js"), "")
 
 	e := &Editor{}
-	p := &Picker{e: e, root: root}
-	p.buildIndex()
-	p.refilter()
+	p := newTestPicker(t, e, root)
 
 	idx := -1
 	for i, m := range p.matches {
@@ -136,17 +163,10 @@ func TestPickerExpandDirIndexesContents(t *testing.T) {
 		t.Fatalf("node_modules dir match missing: %v", p.matches)
 	}
 	p.sel = idx
-	p.expandDir()
+	p.expandDir(p.matches[idx])
+	p.reindexForTest(t)
 
-	files := map[string]bool{}
-	dirs := map[string]bool{}
-	for _, m := range p.files {
-		if m.isDir {
-			dirs[m.rel] = true
-		} else {
-			files[m.rel] = true
-		}
-	}
+	files, dirs := indexKinds(e.fileIndex)
 	if !files[filepath.Join("node_modules", "dep", "i.js")] {
 		t.Error("i.js should be indexed after expand")
 	}
@@ -168,9 +188,7 @@ func TestPickerMRUOrdering(t *testing.T) {
 		filepath.Join(root, "main.go"),
 		filepath.Join(root, "beta.go"),
 	}
-	p := &Picker{e: e, root: root}
-	p.buildIndex()
-	p.refilter()
+	p := newTestPicker(t, e, root)
 
 	var order []string
 	for _, m := range p.matches {
@@ -194,8 +212,7 @@ func TestPickerScoreTiebreakByMRU(t *testing.T) {
 	mustWrite(t, filepath.Join(root, "xo2.go"), "")
 	e := &Editor{}
 	e.recent = []string{filepath.Join(root, "xo2.go")}
-	p := &Picker{e: e, root: root}
-	p.buildIndex()
+	p := newTestPicker(t, e, root)
 	p.input = []rune("o") // equal score (both 'o' at index 1) -> MRU wins
 	p.refilter()
 	if len(p.matches) < 2 {
@@ -244,5 +261,16 @@ func mustWrite(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPasteIntoPickerFiltersQuery(t *testing.T) {
+	e := &Editor{cfg: DefaultConfig()}
+	e.fileIndex = &fileIndex{root: ".", expanded: map[string]bool{}, ready: true}
+	e.picker = &Picker{e: e}
+	e.mode = ModePicker
+	pasteText(e, "abc")
+	if string(e.picker.input) != "abc" {
+		t.Fatalf("picker input = %q", string(e.picker.input))
 	}
 }

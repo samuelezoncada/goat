@@ -53,12 +53,32 @@ func TestCopyMultiline(t *testing.T) {
 	if string(e.clip) != "b\ncd\ne" {
 		t.Fatalf("clip %q", e.clip)
 	}
-	// pasting it back into the untouched buffer reinserts the copied text;
-	// the split line's remainder ("b") follows the last inserted line
+	// pasting it back with no selection reinserts the copied text; the split
+	// line's remainder ("b") follows the last inserted line
+	tb.mark = nil
 	tb.cur = Pos{0, 1}
 	e.uncut()
 	if got := joinLines(t, tb); got != "ab\ncd\neb\ncd\nef" {
 		t.Fatalf("after paste got %q", got)
+	}
+}
+
+func TestPasteOverSelectionReplaces(t *testing.T) {
+	tb := newTestTab("hello world")
+	e := &Editor{tabs: []*Tab{tb}, clip: []rune("X")}
+	tb.cur = Pos{0, 5}
+	tb.mark = &Pos{0, 0} // "hello" selected
+	e.uncut()
+	if got := joinLines(t, tb); got != "X world" {
+		t.Fatalf("paste over selection got %q want %q", got, "X world")
+	}
+	if tb.mark != nil {
+		t.Fatal("paste should clear the selection")
+	}
+	// and it undoes as one action
+	tb.undo()
+	if got := joinLines(t, tb); got != "hello world" {
+		t.Fatalf("undo got %q", got)
 	}
 }
 

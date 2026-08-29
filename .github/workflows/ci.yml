@@ -8,6 +8,7 @@ on:
 jobs:
   test:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
@@ -26,9 +27,28 @@ jobs:
             macOS) brew install universal-ctags ;;
             Windows) choco install universal-ctags -y ;;
           esac
+      - name: Format check
+        shell: bash
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then echo "gofmt needed:"; echo "$out"; exit 1; fi
       - name: Vet
         run: go vet ./...
       - name: Test
         run: go test ./...
+      # The editor runs a background highlighter and background symbol lookups,
+      # so the race detector is where concurrency bugs would show up.
+      - name: Test (race)
+        run: go test -race ./...
       - name: Build
         run: go build ./...
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Fuzz buffer edits (short)
+        run: go test ./editor/ -run FuzzBufferEdits -fuzz FuzzBufferEdits -fuzztime 60s

@@ -238,7 +238,7 @@ func TestCutLine(t *testing.T) {
 	tb.cur = Pos{1, 0}
 	tb.mark = nil
 	// emulate cut: reuse logic by extracting region via deleteRegion on the whole line
-	removed := deleteRegion(tb, 1, 0, 2, 0)
+	removed := tb.deleteRegion(1, 0, 2, 0)
 	if string(removed) != "two\n" {
 		t.Fatalf("removed %q", removed)
 	}
@@ -250,10 +250,10 @@ func TestCutLine(t *testing.T) {
 }
 
 func TestDisplayCol(t *testing.T) {
-	if c := displayCol([]rune("a\tb"), 2); c != 8 {
+	if c := displayCol([]rune("a\tb"), 2, 8); c != 8 {
 		t.Fatalf("tab width got %d want 8", c)
 	}
-	if c := displayCol([]rune("ab"), 2); c != 2 {
+	if c := displayCol([]rune("ab"), 2, 8); c != 2 {
 		t.Fatalf("got %d", c)
 	}
 }

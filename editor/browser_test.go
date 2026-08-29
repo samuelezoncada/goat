@@ -12,7 +12,7 @@ import (
 
 // newBrowserAt builds a browser rooted at base with a fresh expansion set.
 func newBrowserAt(base string) *Browser {
-	e := &Editor{}
+	e := &Editor{cfg: DefaultConfig()}
 	b := NewBrowser(e)
 	b.root = base
 	b.expanded = map[string]bool{}

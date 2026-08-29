@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,17 +17,35 @@ type stubProvider struct {
 	ready bool
 	defs  map[string][]Loc
 	uses  map[string][]Loc
+
+	// UpdateFile is called from a background goroutine, so the record of
+	// what it saw needs its own lock.
+	mu      sync.Mutex
+	updated []string // paths passed to UpdateFile
+}
+
+// updatedFiles returns the paths UpdateFile has been called with.
+func (s *stubProvider) updatedFiles() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.updated...)
 }
 
 func (s *stubProvider) Ready() bool  { return s.ready }
 func (s *stubProvider) Build() error { return nil }
+func (s *stubProvider) UpdateFile(path string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.updated = append(s.updated, path)
+	return nil
+}
 func (s *stubProvider) Definitions(sym string) []Loc {
 	if s.defs != nil {
 		return s.defs[sym]
 	}
 	return nil
 }
-func (s *stubProvider) Usages(sym string) []Loc {
+func (s *stubProvider) Usages(sym string, cancel <-chan struct{}) []Loc {
 	if s.uses != nil {
 		return s.uses[sym]
 	}
@@ -131,7 +150,7 @@ func TestCtagsUsagesScan(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	locs := newCtagsIndex(root).Usages("Foo")
+	locs := newCtagsIndex(root).Usages("Foo", nil)
 	var files []string
 	for _, l := range locs {
 		files = append(files, filepath.Base(l.File))
@@ -381,7 +400,7 @@ func TestCtagsLive(t *testing.T) {
 		t.Fatalf("file = %q want %q", d.File, path)
 	}
 
-	uses := c.Usages("Greet")
+	uses := c.Usages("Greet", nil)
 	if len(uses) == 0 {
 		t.Fatal("no usages found")
 	}

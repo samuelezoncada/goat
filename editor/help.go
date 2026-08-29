@@ -16,102 +16,9 @@ type helpSection struct {
 
 const helpTitle = "goat - a text editor for mere mortals"
 
-var helpSections = []helpSection{
-	{
-		title: "Movement",
-		rows: []helpRow{
-			{"^A / ^E", "Home / End"},
-			{"^B / ^F", "Left / Right"},
-			{"^N", "Down"},
-			{"Arrows", "Move"},
-			{"Alt+Up / Down", "Scroll"},
-			{"^Left / ^Right", "Word"},
-			{"Alt+Left / Right", "Word"},
-		},
-	},
-	{
-		title: "Editing",
-		rows: []helpRow{
-			{"^K / ^X", "Cut"},
-			{"^U / ^V", "Paste"},
-			{"^O / ^S", "Save"},
-			{"^R", "Read file"},
-			{"^W", "Search"},
-			{"^\\", "Replace"},
-			{"^D", "Delete forward"},
-			{"^H", "Backspace"},
-			{"^J", "Justify"},
-			{"^I", "Tab"},
-			{"Enter", "Newline"},
-		},
-	},
-	{
-		title: "Select",
-		rows: []helpRow{
-			{"Shift+Arrows", "Extend selection"},
-			{"Alt+Space", "Mark on / off"},
-			{"^C", "Copy selection"},
-			{"^K / ^X", "Cut selection"},
-			{"Esc", "Clear selection"},
-		},
-	},
-	{
-		title: "Tabs",
-		rows: []helpRow{
-			{"Ctrl+Tab", "Next tab"},
-			{"Ctrl+Shift+Tab", "Previous tab"},
-			{"Alt+T", "New tab"},
-			{"Alt+W", "Close tab"},
-			{"Click \u00d7", "Close tab"},
-		},
-	},
-	{
-		title: "Exit",
-		rows: []helpRow{
-			{"^Q / Alt+Q", "Quit (prompts to save)"},
-		},
-	},
-	{
-		title: "File browser",
-		rows: []helpRow{
-			{"Ctrl+B / Alt+S", "Toggle browser"},
-			{"Alt+Tab", "Focus"},
-			{"Enter", "Open / expand"},
-			{"Right / +", "Expand dir"},
-			{"Left / -", "Collapse / parent"},
-			{"Backspace", "Collapse / up"},
-			{"Esc", "Close browser"},
-		},
-	},
-	{
-		title: "Other",
-		rows: []helpRow{
-			{"^G", "This help"},
-			{"^P", "Find file"},
-			{"Alt+A", "Select all"},
-			{"^L", "Refresh screen"},
-			{"Alt+D", "Definition / usages"},
-			{"Alt+G", "Go to line"},
-			{"^Z / Alt+Z", "Undo"},
-			{"^Y / Alt+Y", "Redo"},
-		},
-	},
-	{
-		title: "Search prompt",
-		rows: []helpRow{
-			{"^W", "Next match"},
-			{"Alt+Q", "Reverse"},
-			{"Alt+C", "Case sensitivity"},
-			{"Esc / ^X", "Cancel"},
-		},
-	},
-	{
-		title: "Replace",
-		rows: []helpRow{
-			{"y / n / a", "Yes / No / All"},
-		},
-	},
-}
+// helpSections is derived from the shared binding table, so the help page can
+// never drift from what the keymap actually implements.
+func helpSectionList() []helpSection { return bindingSections() }
 
 // openHelp shows the help page, resetting the scroll position.
 func (e *Editor) openHelp() {
@@ -199,7 +106,7 @@ func (e *Editor) drawHelp() {
 
 	drawLine(helpPart{margin, e.width - margin - 1, helpTitle, titleStyle})
 	line++ // blank after title
-	for _, sec := range helpSections {
+	for _, sec := range helpSectionList() {
 		drawLine(helpPart{margin, e.width - margin - 1, sec.title, titleStyle})
 		half := len(sec.rows)
 		if twoCol {
@@ -237,7 +144,7 @@ func (e *Editor) drawHelp() {
 // layout in drawHelp so scrolling can be clamped correctly.
 func helpLineCount(twoCol bool) int {
 	total := 2 // title + blank
-	for _, sec := range helpSections {
+	for _, sec := range helpSectionList() {
 		total += 1 // section title
 		half := len(sec.rows)
 		if twoCol {

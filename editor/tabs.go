@@ -1,5 +1,11 @@
 package editor
 
+import (
+	"os"
+	"path/filepath"
+	"strings"
+)
+
 // HasTabs reports whether any buffers are open.
 func (e *Editor) HasTabs() bool { return len(e.tabs) > 0 }
 
@@ -28,6 +34,41 @@ func (e *Editor) NewTab() { e.newTab() }
 // OpenPath opens a file into a tab (exported for main).
 func (e *Editor) OpenPath(path string) { e.openPath(path) }
 
+// projectRoot is the folder goat was pointed at: an explicit directory
+// argument, else the browser's root (the launch directory). It is what paths
+// are shown relative to, and what the symbol index covers.
+func (e *Editor) projectRoot() string {
+	if e.root != "" {
+		return e.root
+	}
+	if e.browser != nil && e.browser.root != "" {
+		return e.browser.root
+	}
+	cwd, _ := os.Getwd()
+	return cwd
+}
+
+// displayPath renders a buffer's name for the status bar: relative to the
+// project root when the file lives inside it, absolute otherwise, so a file
+// opened from elsewhere is never shown as a confusing "../../..".
+func (e *Editor) displayPath(t *Tab) string {
+	if t == nil {
+		return ""
+	}
+	if t.path == "" {
+		return t.name
+	}
+	root := e.projectRoot()
+	if root == "" {
+		return t.path
+	}
+	rel, err := filepath.Rel(root, t.path)
+	if err != nil || rel == "." || rel == "" || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return t.path
+	}
+	return rel
+}
+
 // tabRect tracks a tab's on-screen hit areas for mouse clicks.
 type tabRect struct {
 	index            int
@@ -41,6 +82,9 @@ func (e *Editor) tabLabels() []string {
 		n := t.name
 		if t.dirty {
 			n = "* " + n
+		}
+		if t.readOnly {
+			n += " [ro]"
 		}
 		labels[i] = " " + n
 	}
@@ -75,6 +119,9 @@ func (e *Editor) drawTabBar() {
 				break
 			}
 			start = i
+		}
+		if start > e.cur {
+			start = e.cur
 		}
 	}
 
@@ -127,29 +174,59 @@ func (e *Editor) openTab(t *Tab) {
 	if len(e.tabs) == 1 {
 		cur := e.tabs[0]
 		if cur.name == "New Buffer" && !cur.dirty && cur.path == "" {
+			// Stop the replaced buffer's highlighter, or its goroutine leaks.
+			cur.close()
 			e.tabs[0] = t
+			e.cur = 0
 			return
 		}
 	}
 	e.tabs = append(e.tabs, t)
 	e.cur = len(e.tabs) - 1
-	e.clearMsg()
 }
 
 func (e *Editor) newTab() {
-	e.openTab(NewTab())
+	e.openTab(newTabWith(e.config()))
 }
 
-// openPath loads a file (or creates a new tab) into a tab.
-func (e *Editor) openPath(path string) {
-	t, err := OpenTab(path)
+// tabForPath returns the index of the tab already holding path, or -1.
+func (e *Editor) tabForPath(path string) int {
+	abs, err := filepath.Abs(path)
 	if err != nil {
-		e.statusf("Error reading %s: %v", path, err)
+		abs = path
+	}
+	for i, t := range e.tabs {
+		if t.path != "" && samePath(t.path, abs) {
+			return i
+		}
+	}
+	return -1
+}
+
+// openPath loads a file into a tab, or switches to the tab that already has it
+// open so two buffers can never disagree about the same file.
+func (e *Editor) openPath(path string) {
+	if i := e.tabForPath(path); i >= 0 {
+		e.cur = i
+		e.remember(path)
+		e.statusf("%s", e.displayPath(e.tabs[i]))
+		return
+	}
+	t, err := openTabWith(path, e.config())
+	if err != nil {
+		e.errorf("Error reading %s: %v", filepath.Base(path), cleanErr(err))
 		return
 	}
 	e.remember(path)
 	e.openTab(t)
-	e.statusf("Read %d lines", t.lineCount())
+	msg := sprintf("Read %d line%s", t.lineCount(), plural(t.lineCount()))
+	switch {
+	case t.readOnly:
+		msg += "  [read-only]"
+	case t.rawBytes:
+		msg += "  [not UTF-8; bytes preserved]"
+	}
+	e.statusf("%s", msg)
 }
 
 func (e *Editor) closeCurrentTab() {
@@ -179,19 +256,17 @@ func (e *Editor) promptCloseTab(t *Tab) {
 					if name == "" {
 						return
 					}
-					if err := t.saveTo(name); err != nil {
-						e.statusf("Error writing: %v", err)
-						return
+					if e.writeTab(t, name) {
+						e.doCloseTab()
 					}
-					e.doCloseTab()
 				})
 				return
 			}
-			if err := t.saveTo(t.path); err != nil {
-				e.statusf("Error writing: %v", err)
-				return
-			}
-			e.doCloseTab()
+			e.writeTabChecked(t, t.path, func(ok bool) {
+				if ok {
+					e.doCloseTab()
+				}
+			})
 		case "n", "N":
 			e.doCloseTab()
 		default:
@@ -224,4 +299,19 @@ func (e *Editor) switchTab(dir int) {
 		return
 	}
 	e.cur = (e.cur + dir + len(e.tabs)) % len(e.tabs)
+}
+
+// gotoTab activates the nth tab (0-based), if it exists.
+func (e *Editor) gotoTab(n int) {
+	if n < 0 || n >= len(e.tabs) {
+		return
+	}
+	e.cur = n
+}
+
+// SetReadOnly marks every open buffer read-only (the --view flag).
+func (e *Editor) SetReadOnly(ro bool) {
+	for _, t := range e.tabs {
+		t.readOnly = ro
+	}
 }

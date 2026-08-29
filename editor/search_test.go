@@ -134,11 +134,11 @@ func TestReplaceAllContainingNeedle(t *testing.T) {
 	}
 }
 
-// TestReplaceAllDoesNotWrap ensures replace-all processes each occurrence once
-// and does not loop back to matches already replaced before the cursor.
-func TestReplaceAllDoesNotWrap(t *testing.T) {
+// TestReplaceAllProcessesEachOccurrenceOnce ensures replace-all handles every
+// occurrence exactly once and never loops back over replaced text.
+func TestReplaceAllProcessesEachOccurrenceOnce(t *testing.T) {
 	tb := newTestTab("foo foo foo")
-	e := &Editor{tabs: []*Tab{tb}}
+	e := &Editor{tabs: []*Tab{tb}, cfg: DefaultConfig()}
 	e.search.text = "foo"
 	e.replaceTo = "x"
 	tb.cur = Pos{0, 0}
@@ -202,14 +202,13 @@ func TestJustify(t *testing.T) {
 	e := &Editor{tabs: []*Tab{tb}}
 	tb.cur = Pos{0, 0}
 	e.justify()
-	want := "helloworld\n\nrest"
+	// The paragraph is re-wrapped: joined with a space, not concatenated.
+	want := "hello world\n\nrest"
 	if got := joinLines(t, tb); got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
-	// undo (twice: the tail-append and the line removal) restores the paragraph
-	for tb.edits.CanUndo() {
-		tb.undo()
-	}
+	// one undo restores the paragraph: justify is a single action
+	tb.undo()
 	if got := joinLines(t, tb); got != "hello\nworld\n\nrest" {
 		t.Fatalf("after undo got %q", got)
 	}

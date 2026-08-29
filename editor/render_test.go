@@ -10,19 +10,19 @@ import (
 )
 
 func TestCursorCell(t *testing.T) {
-	if ch, w := cursorCell([]rune("abc"), 1); ch != 'b' || w != 1 {
+	if ch, w := cursorCell([]rune("abc"), 1, 8); ch != 'b' || w != 1 {
 		t.Fatalf("normal char = %q/%d", ch, w)
 	}
-	if ch, w := cursorCell([]rune("a\tb"), 1); ch != '\t' || w != tabStop-1 {
+	if ch, w := cursorCell([]rune("a\tb"), 1, 8); ch != '\t' || w != 7 {
 		t.Fatalf("tab = %q/%d", ch, w)
 	}
-	if ch, w := cursorCell([]rune("世b"), 0); ch != '世' || w != 2 {
+	if ch, w := cursorCell([]rune("世b"), 0, 8); ch != '世' || w != 2 {
 		t.Fatalf("wide char = %q/%d", ch, w)
 	}
-	if ch, w := cursorCell([]rune("ab"), 5); ch != ' ' || w != 1 {
+	if ch, w := cursorCell([]rune("ab"), 5, 8); ch != ' ' || w != 1 {
 		t.Fatalf("past EOL = %q/%d", ch, w)
 	}
-	if ch, w := cursorCell([]rune("ab"), -1); ch != ' ' || w != 1 {
+	if ch, w := cursorCell([]rune("ab"), -1, 8); ch != ' ' || w != 1 {
 		t.Fatalf("negative col = %q/%d", ch, w)
 	}
 }
@@ -45,7 +45,7 @@ func TestDrawCursorBlock(t *testing.T) {
 	e.drawEditor()
 	scr.Show()
 
-	x := e.gutterWidth() + displayCol(tb.line(1), 5) - tb.left
+	x := e.gutterWidth() + displayCol(tb.line(1), 5, 8) - tb.left
 	y := e.mainTop() + 1 - tb.top
 	cells, w, _ := scr.GetContents()
 	cell := cells[y*w+x]

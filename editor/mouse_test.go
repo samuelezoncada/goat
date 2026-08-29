@@ -21,7 +21,7 @@ func mouseEditor(t *testing.T, content string) (*Editor, *Tab) {
 
 // cellXY returns the terminal cell for a (line, col) in the text pane.
 func cellXY(e *Editor, t *Tab, line, col int) (int, int) {
-	return e.gutterWidth() + displayCol(t.line(line), col), e.mainTop() + line - t.top
+	return e.gutterWidth() + displayCol(t.line(line), col, 8), e.mainTop() + line - t.top
 }
 
 func TestMouseClickMovesCursorNoSelection(t *testing.T) {

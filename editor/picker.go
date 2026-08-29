@@ -1,8 +1,10 @@
 package editor
 
 import (
+	"bytes"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -11,17 +13,27 @@ import (
 	"github.com/gdamore/tcell/v2"
 )
 
+// indexEntry is one file (or unexpanded heavy directory) known to the picker.
+type indexEntry struct {
+	path     string // absolute
+	rel      string // relative to root, used for display and matching
+	relLower string // pre-lowered, so filtering allocates nothing per keystroke
+	ascii    bool   // rel is pure ASCII: byte offsets are rune columns
+	isDir    bool   // heavy dir shown as expandable, not walked into
+}
+
 // match is a single picker result.
 type match struct {
-	path  string // absolute
-	rel   string // relative to root, used for display/matching
+	path  string
+	rel   string
 	score int
 	pos   []int // matched rune indices within rel
-	isDir bool  // heavy dir shown as expandable, not walked into
+	isDir bool
 }
 
 // skipDirs are directories never indexed implicitly; they appear as
-// expandable entries and are only walked when the user opens them.
+// expandable entries and are only walked when the user opens them. Inside a
+// git repository the ignore rules take over and this list is only a fallback.
 var skipDirs = map[string]bool{
 	"node_modules": true, "vendor": true, "target": true, "dist": true,
 	"build": true, "out": true, "bin": true, "obj": true,
@@ -33,13 +45,35 @@ var skipDirs = map[string]bool{
 	"tmp": true,
 }
 
+// maxIndexFiles bounds the picker index so an accidental ^P at $HOME cannot
+// grow without limit.
+const maxIndexFiles = 200000
+
+// fileIndex is the project file list backing the picker. It is built in the
+// background and cached on the Editor, so ^P opens instantly and re-opening
+// does not re-walk the tree.
+type fileIndex struct {
+	root     string
+	entries  []indexEntry
+	expanded map[string]bool // heavy dirs the user chose to index
+	ready    bool
+	building bool
+	seq      uint64 // generation, so a stale build result is ignored
+	err      string
+}
+
+// indexDone carries a finished background index build into the event loop.
+type indexDone struct {
+	seq     uint64
+	entries []indexEntry
+	err     string
+}
+
 // Picker is the Ctrl+P fuzzy file finder.
 type Picker struct {
 	e       *Editor
 	input   []rune
 	pos     int
-	root    string
-	files   []match
 	matches []match
 	sel     int
 	top     int
@@ -51,16 +85,162 @@ func (e *Editor) openPicker() {
 		var err error
 		root, err = os.Getwd()
 		if err != nil {
-			e.statusf("no working directory")
+			e.errorf("no working directory")
 			return
 		}
 	}
-	p := &Picker{e: e, root: root}
-	p.buildIndex()
-	p.refilter()
-	e.picker = p
+	if e.fileIndex == nil || e.fileIndex.root != root {
+		e.fileIndex = &fileIndex{root: root, expanded: map[string]bool{}}
+	}
+	e.picker = &Picker{e: e}
 	e.mode = ModePicker
 	e.clearMsg()
+	e.picker.refilter()
+	if !e.fileIndex.ready && !e.fileIndex.building {
+		e.startIndex()
+	}
+}
+
+// startIndex kicks off a background walk of the project tree. The UI stays
+// responsive and shows results as soon as they arrive.
+func (e *Editor) startIndex() {
+	idx := e.fileIndex
+	if idx == nil || idx.building {
+		return
+	}
+	idx.building = true
+	idx.seq++
+	seq := idx.seq
+	root := idx.root
+	expanded := make(map[string]bool, len(idx.expanded))
+	for k, v := range idx.expanded {
+		expanded[k] = v
+	}
+	go func() {
+		entries, err := buildFileIndex(root, expanded)
+		msg := ""
+		if err != nil {
+			msg = err.Error()
+		}
+		e.post(indexDone{seq: seq, entries: entries, err: msg})
+	}()
+}
+
+// onIndexDone installs a finished index and refreshes the open picker.
+func (e *Editor) onIndexDone(d indexDone) {
+	idx := e.fileIndex
+	if idx == nil || d.seq != idx.seq {
+		return // superseded by a newer build
+	}
+	idx.building = false
+	idx.ready = true
+	idx.entries = d.entries
+	idx.err = d.err
+	if e.picker != nil {
+		e.picker.refilter()
+	}
+}
+
+// InvalidateIndex drops the cached file list, so the next ^P re-walks the tree.
+func (e *Editor) InvalidateIndex() {
+	if e.fileIndex != nil {
+		e.fileIndex.ready = false
+	}
+}
+
+// buildFileIndex lists the project's files. In a git work tree it asks git,
+// which applies .gitignore, .git/info/exclude and the global ignore file
+// exactly; otherwise it walks the tree skipping known-heavy directories.
+func buildFileIndex(root string, expanded map[string]bool) ([]indexEntry, error) {
+	entries, err := gitFileIndex(root)
+	if err != nil || entries == nil {
+		entries = walkFileIndex(root, expanded)
+	}
+	sortEntries(entries)
+	return entries, nil
+}
+
+// gitFileIndex returns the tracked and untracked-but-not-ignored files, or nil
+// when root is not a git work tree (or git is unavailable).
+func gitFileIndex(root string) ([]indexEntry, error) {
+	exe, err := exec.LookPath("git")
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command(exe, "-C", root, "ls-files", "--cached", "--others", "--exclude-standard", "-z")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	var entries []indexEntry
+	for _, b := range bytes.Split(out, []byte{0}) {
+		if len(b) == 0 {
+			continue
+		}
+		rel := filepath.FromSlash(string(b))
+		entries = append(entries, newIndexEntry(root, rel, false))
+		if len(entries) >= maxIndexFiles {
+			break
+		}
+	}
+	if entries == nil {
+		// A git repo with no files at all: still a valid answer.
+		return []indexEntry{}, nil
+	}
+	return entries, nil
+}
+
+func walkFileIndex(root string, expanded map[string]bool) []indexEntry {
+	var entries []indexEntry
+	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if len(entries) >= maxIndexFiles {
+			return filepath.SkipAll
+		}
+		if d.IsDir() {
+			if path != root && skipDirs[d.Name()] && !expanded[path] {
+				rel, err := filepath.Rel(root, path)
+				if err == nil {
+					entries = append(entries, newIndexEntry(root, rel, true))
+				}
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return nil
+		}
+		entries = append(entries, newIndexEntry(root, rel, false))
+		return nil
+	})
+	return entries
+}
+
+// sortEntries orders the index by lowercased relative path.
+func sortEntries(entries []indexEntry) {
+	sort.Slice(entries, func(i, j int) bool { return entries[i].relLower < entries[j].relLower })
+}
+
+func newIndexEntry(root, rel string, isDir bool) indexEntry {
+	return indexEntry{
+		path:     filepath.Join(root, rel),
+		rel:      rel,
+		relLower: strings.ToLower(rel),
+		ascii:    isASCII(rel),
+		isDir:    isDir,
+	}
+}
+
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
 }
 
 // SetRoot sets the directory the file picker searches (abs). Empty keeps the
@@ -68,6 +248,7 @@ func (e *Editor) openPicker() {
 func (e *Editor) SetRoot(path string) {
 	if abs, err := filepath.Abs(path); err == nil {
 		e.root = abs
+		e.fileIndex = nil
 	}
 }
 
@@ -77,105 +258,62 @@ func (e *Editor) cancelPicker() {
 	e.screen.HideCursor()
 }
 
-// buildIndex walks root and collects files, recording heavy dirs as
-// expandable entries without walking into them.
-func (p *Picker) buildIndex() {
-	p.files = p.files[:0]
-	p.indexDir(p.root)
-	sort.Slice(p.files, func(i, j int) bool {
-		return strings.ToLower(p.files[i].rel) < strings.ToLower(p.files[j].rel)
-	})
-}
-
-// indexDir walks dir, appending files to p.files. Heavy subdirectories are
-// recorded as expandable dir matches but are not walked into; they are only
-// indexed when the user opens them (see expandDir).
-func (p *Picker) indexDir(dir string) {
-	filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		name := d.Name()
-		if d.IsDir() {
-			if path != dir && skipDirs[name] {
-				rel, _ := filepath.Rel(p.root, path)
-				p.files = append(p.files, match{path: path, rel: rel, isDir: true})
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		rel, err := filepath.Rel(p.root, path)
-		if err != nil {
-			return nil
-		}
-		p.files = append(p.files, match{path: path, rel: rel})
-		return nil
-	})
-}
-
-// expandDir replaces the selected heavy-dir match with its indexed contents,
-// making the files inside searchable. Heavy dirs found within it are recorded
-// as expandable entries in turn.
-func (p *Picker) expandDir() {
-	if p.sel < 0 || p.sel >= len(p.matches) {
+// expandDir indexes a heavy directory the user opened, making its files
+// searchable.
+func (p *Picker) expandDir(m match) {
+	idx := p.e.fileIndex
+	if idx == nil {
 		return
 	}
-	m := p.matches[p.sel]
-	if !m.isDir {
-		return
-	}
-	out := p.files[:0]
-	for _, f := range p.files {
+	idx.expanded[m.path] = true
+	// Drop the placeholder entry and re-index in the background.
+	out := idx.entries[:0]
+	for _, f := range idx.entries {
 		if f.path != m.path {
 			out = append(out, f)
 		}
 	}
-	p.files = out
-	p.indexDir(m.path)
-	sort.Slice(p.files, func(i, j int) bool {
-		return strings.ToLower(p.files[i].rel) < strings.ToLower(p.files[j].rel)
-	})
+	idx.entries = out
 	p.sel, p.top = 0, 0
 	p.refilter()
+	p.e.startIndex()
 }
 
-// fuzzyScore scores a case-insensitive subsequence match of query against s.
-// Returns the score, the matched rune indices, and whether it matched at all.
-func fuzzyScore(query, s string) (int, []int, bool) {
-	if query == "" {
+// fuzzyScoreASCII is fuzzyScoreLower for all-ASCII input: it walks bytes
+// directly, so filtering a large index allocates nothing except the position
+// list of an actual match.
+func fuzzyScoreASCII(q, s, sLower string) (int, []int, bool) {
+	if len(q) == 0 {
 		return 0, nil, true
 	}
-	q := []rune(strings.ToLower(query))
-	rs := []rune(s)
-	sl := []rune(strings.ToLower(s))
-	if len(q) > len(rs) {
+	if len(q) > len(s) {
 		return 0, nil, false
 	}
-
-	matched := []int{}
-	qi := 0
-	score := 0
-	prev := -2
-	for i, r := range sl {
-		if r != q[qi] {
+	var matched []int
+	qi, score, prev := 0, 0, -2
+	base := 0
+	for i := 0; i < len(sLower); i++ {
+		if sLower[i] != q[qi] {
 			continue
+		}
+		if matched == nil {
+			matched = make([]int, 0, len(q))
 		}
 		matched = append(matched, i)
 		score++
 		if i == prev+1 {
 			score += 8 // consecutive run
 		}
-		if i == 0 || rs[i-1] == '/' || rs[i-1] == '_' || rs[i-1] == '-' || rs[i-1] == '.' || rs[i-1] == ' ' {
+		if i == 0 || isBoundaryByte(s[i-1]) {
 			score += 5 // path/word boundary start
-		} else if i > 0 && unicode.IsLower(rs[i-1]) && unicode.IsUpper(rs[i]) {
+		} else if isLowerByte(s[i-1]) && isUpperByte(s[i]) {
 			score += 5 // camelCase transition
 		}
 		prev = i
 		qi++
 		if qi == len(q) {
-			base := 0
-			for j, r := range rs {
-				if r == '/' {
+			for j := 0; j < len(s); j++ {
+				if s[j] == '/' || s[j] == byte(filepath.Separator) {
 					base = j + 1
 				}
 			}
@@ -188,26 +326,111 @@ func fuzzyScore(query, s string) (int, []int, bool) {
 	return 0, nil, false
 }
 
+func isBoundaryByte(b byte) bool {
+	return b == '/' || b == byte(filepath.Separator) || b == '_' || b == '-' || b == '.' || b == ' '
+}
+func isLowerByte(b byte) bool { return b >= 'a' && b <= 'z' }
+func isUpperByte(b byte) bool { return b >= 'A' && b <= 'Z' }
+
+// fuzzyScore scores a case-insensitive subsequence match of query against s.
+// query must already be lowercased and sLower must be strings.ToLower(s);
+// both are precomputed by the caller so filtering does not allocate per
+// candidate. Returns the score, the matched rune indices, and whether it
+// matched.
+func fuzzyScoreLower(q []rune, s, sLower string) (int, []int, bool) {
+	if len(q) == 0 {
+		return 0, nil, true
+	}
+	rs := []rune(s)
+	sl := []rune(sLower)
+	if len(q) > len(sl) {
+		return 0, nil, false
+	}
+	var matched []int
+	qi := 0
+	score := 0
+	prev := -2
+	for i, r := range sl {
+		if r != q[qi] {
+			continue
+		}
+		if matched == nil {
+			matched = make([]int, 0, len(q))
+		}
+		matched = append(matched, i)
+		score++
+		if i == prev+1 {
+			score += 8 // consecutive run
+		}
+		if i == 0 || (i-1 < len(rs) && isBoundary(rs[i-1])) {
+			score += 5 // path/word boundary start
+		} else if i > 0 && i < len(rs) && unicode.IsLower(rs[i-1]) && unicode.IsUpper(rs[i]) {
+			score += 5 // camelCase transition
+		}
+		prev = i
+		qi++
+		if qi == len(q) {
+			base := 0
+			for j, r := range rs {
+				if r == '/' || r == filepath.Separator {
+					base = j + 1
+				}
+			}
+			if matched[0] >= base {
+				score += 10 // match lives in the basename
+			}
+			return score, matched, true
+		}
+	}
+	return 0, nil, false
+}
+
+func isBoundary(r rune) bool {
+	return r == '/' || r == filepath.Separator || r == '_' || r == '-' || r == '.' || r == ' '
+}
+
+// fuzzyScore is the convenience form used by tests and one-off calls.
+func fuzzyScore(query, s string) (int, []int, bool) {
+	return fuzzyScoreLower([]rune(strings.ToLower(query)), s, strings.ToLower(s))
+}
+
 // refilter applies the current query, ordering by MRU then score then name.
 func (p *Picker) refilter() {
-	query := string(p.input)
-	rank := p.e.recentRank()
+	idx := p.e.fileIndex
 	p.matches = p.matches[:0]
+	if idx == nil {
+		return
+	}
+	query := strings.TrimSpace(string(p.input))
+	rank := p.e.recentRank()
 	if query == "" {
-		ordered := make([]match, len(p.files))
-		copy(ordered, p.files)
-		sort.Slice(ordered, func(i, j int) bool {
-			ri, rj := rank(ordered[i].path), rank(ordered[j].path)
+		for _, f := range idx.entries {
+			p.matches = append(p.matches, match{path: f.path, rel: f.rel, isDir: f.isDir})
+		}
+		sort.SliceStable(p.matches, func(i, j int) bool {
+			ri, rj := rank(p.matches[i].path), rank(p.matches[j].path)
 			if ri != rj {
 				return ri < rj
 			}
-			return strings.ToLower(ordered[i].rel) < strings.ToLower(ordered[j].rel)
+			return false // entries are already sorted by name
 		})
-		p.matches = ordered
 	} else {
-		for _, f := range p.files {
-			if sc, pos, ok := fuzzyScore(query, f.rel); ok {
-				p.matches = append(p.matches, match{path: f.path, rel: f.rel, score: sc, pos: pos})
+		lower := strings.ToLower(query)
+		q := []rune(lower)
+		qASCII := isASCII(lower)
+		for _, f := range idx.entries {
+			var (
+				sc  int
+				pos []int
+				ok  bool
+			)
+			if qASCII && f.ascii {
+				sc, pos, ok = fuzzyScoreASCII(lower, f.rel, f.relLower)
+			} else {
+				sc, pos, ok = fuzzyScoreLower(q, f.rel, f.relLower)
+			}
+			if ok {
+				p.matches = append(p.matches, match{path: f.path, rel: f.rel, score: sc, pos: pos, isDir: f.isDir})
 			}
 		}
 		sort.SliceStable(p.matches, func(i, j int) bool {
@@ -218,7 +441,7 @@ func (p *Picker) refilter() {
 			if ri != rj {
 				return ri < rj
 			}
-			return strings.ToLower(p.matches[i].rel) < strings.ToLower(p.matches[j].rel)
+			return p.matches[i].rel < p.matches[j].rel
 		})
 	}
 	if p.sel >= len(p.matches) {
@@ -275,6 +498,10 @@ func (e *Editor) pickerKey(ev *tcell.EventKey) {
 		e.cancelPicker()
 	case tcell.KeyEnter:
 		e.pickerOpen()
+	case tcell.KeyCtrlR:
+		// re-index on demand, e.g. after files changed outside the editor
+		e.InvalidateIndex()
+		e.startIndex()
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
 		if p.pos > 0 {
 			p.pos--
@@ -300,11 +527,11 @@ func (e *Editor) pickerKey(ev *tcell.EventKey) {
 		p.pos = 0
 	case tcell.KeyEnd:
 		p.pos = len(p.input)
-	case tcell.KeyUp:
+	case tcell.KeyUp, tcell.KeyCtrlP:
 		if p.sel > 0 {
 			p.sel--
 		}
-	case tcell.KeyDown:
+	case tcell.KeyDown, tcell.KeyCtrlN:
 		if p.sel+1 < len(p.matches) {
 			p.sel++
 		}
@@ -346,7 +573,7 @@ func (e *Editor) pickerOpen() {
 	}
 	m := p.matches[p.sel]
 	if m.isDir {
-		p.expandDir()
+		p.expandDir(m)
 		return
 	}
 	path := m.path
@@ -369,8 +596,7 @@ func (e *Editor) drawPicker() {
 	// input line at the top of the main area
 	y := e.mainTop()
 	e.fillRow(0, e.width, y, inputStyle)
-	label := "> "
-	px := e.drawInputLine(1, y, label, p.input, p.pos, inputStyle)
+	px := e.drawInputLine(1, y, "> ", p.input, p.pos, inputStyle)
 
 	// result list
 	listTop := y + 1
@@ -406,7 +632,7 @@ func (e *Editor) drawPicker() {
 		e.fillRow(0, e.width, yy, style)
 		label := m.rel
 		if m.isDir {
-			label += "/"
+			label += string(filepath.Separator)
 		}
 		rr := []rune(label)
 		hl := make(map[int]bool, len(m.pos))
@@ -424,14 +650,27 @@ func (e *Editor) drawPicker() {
 			}
 			ch := rr[col]
 			e.drawCell(xx, yy, ch, st)
-			xx += runeWidth(ch)
+			w := runeWidth(ch)
+			if w == 0 {
+				w = 1
+			}
+			xx += w
 		}
 	}
 
 	// footer
 	fy := e.height - 1
 	e.fillRow(0, e.width, fy, hintStyle)
-	e.putStr(1, fy, sprintf(" %d item(s)   ↑/↓ move   Enter open/expand   Esc cancel", len(p.matches)), hintStyle)
+	status := sprintf(" %d item(s)", len(p.matches))
+	if idx := e.fileIndex; idx != nil {
+		switch {
+		case idx.building:
+			status = " indexing..."
+		case idx.err != "":
+			status = sprintf(" %d item(s)  (index: %s)", len(p.matches), idx.err)
+		}
+	}
+	e.putStr(1, fy, status+"   ↑/↓ move   Enter open/expand   ^R reindex   Esc cancel", hintStyle)
 
 	// input cursor
 	if px >= 0 && px < e.width {
@@ -439,4 +678,27 @@ func (e *Editor) drawPicker() {
 	} else {
 		e.screen.HideCursor()
 	}
+}
+
+// pickerInsert inserts pasted text into the picker query.
+func (e *Editor) pickerInsert(rs []rune) {
+	p := e.picker
+	if p == nil {
+		return
+	}
+	clean := make([]rune, 0, len(rs))
+	for _, r := range rs {
+		if r >= 0x20 && r != 0x7f {
+			clean = append(clean, r)
+		}
+	}
+	if len(clean) == 0 {
+		return
+	}
+	p.input = append(p.input, clean...)
+	copy(p.input[p.pos+len(clean):], p.input[p.pos:len(p.input)-len(clean)])
+	copy(p.input[p.pos:], clean)
+	p.pos += len(clean)
+	p.sel, p.top = 0, 0
+	p.refilter()
 }
