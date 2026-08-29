@@ -2,7 +2,7 @@
 
 All notable changes to goat are documented here.
 
-## Unreleased
+## v0.2.0 - 2026-08-29
 
 ### Fixed — data loss
 
