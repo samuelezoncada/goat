@@ -2,6 +2,21 @@
 
 All notable changes to goat are documented here.
 
+## Unreleased
+
+### Added
+
+- **macOS Command (⌘) key bindings.** The ⌘ key (`ModMeta` in tcell) is now
+  handled: `⌘Q` quit, `⌘W` close tab, `⌘N`/`⌘T` new tab, `⌘S` save, `⌘O`
+  read file, `⌘Z`/`⇧⌘Z` undo/redo, `⌘X`/`⌘C`/`⌘V` cut/copy/paste, `⌘A` select
+  all, `⌘F` search, `⌘G`/`⇧⌘G` next/previous match, `⌘R` replace, `⌘P` find
+  file, `⌘B` toggle browser, `⌘D` definition/usages, `⌘L` go to line,
+  `⌘1..9` go to tab, `⌘←`/`⌘→` home/end and `⌘↑`/`⌘↓` start/end of buffer.
+  In the search prompt `⌘G`/`⇧⌘G` repeat/reverse the search and `⌘C`/`⌘R`/`⌘U`
+  toggle the search flags; `⌘V` pastes into any prompt and the picker. These
+  need a terminal that reports the Command key as a modifier (kitty, WezTerm,
+  …) — macOS Terminal and iTerm2 reserve ⌘ for their own menus.
+
 ## v0.2.0 - 2026-08-29
 
 ### Fixed — data loss

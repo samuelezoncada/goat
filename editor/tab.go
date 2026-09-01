@@ -845,6 +845,20 @@ func (t *Tab) end() {
 	t.destCol = t.cur.Col
 }
 
+// bufStart moves to the start of the buffer.
+func (t *Tab) bufStart() {
+	t.cur.Line = 0
+	t.cur.Col = 0
+	t.destCol = 0
+}
+
+// bufEnd moves to the end of the buffer.
+func (t *Tab) bufEnd() {
+	t.cur.Line = t.lineCount() - 1
+	t.cur.Col = len(t.line(t.cur.Line))
+	t.destCol = t.cur.Col
+}
+
 func (t *Tab) wordLeft() {
 	for t.cur.Col > 0 && !isWord(t.runAt(t.cur.Line, t.cur.Col-1)) {
 		t.cur.Col--

@@ -124,6 +124,29 @@ cancels. During replace: `y` yes, `n` no, `a` all. With regular expressions
 on, the replacement may reference capture groups (`$1`, `${name}`). If a
 Selection is active when replace starts, `a` only replaces inside it.
 
+On macOS the **Command (⌘) key** is bound to the conventional shortcuts:
+
+```
+⌘Q        Quit                       ⌘W        Close tab
+⌘N / ⌘T   New tab                    ⌘S        Save
+⌘O        Read file                  ⌘Z / ⇧⌘Z  Undo / Redo
+⌘X / ⌘C / ⌘V   Cut / Copy / Paste    ⌘A        Select all
+⌘F        Search                     ⌘G / ⇧⌘G  Next / previous match
+⌘R        Replace                    ⌘P        Find file
+⌘B        Toggle browser             ⌘D        Definition / usages
+⌘L        Go to line                 ⌘1..9     Go to tab N
+⌘← / ⌘→   Home / End                 ⌘↑ / ⌘↓   Start / end of buffer
+```
+
+In the search prompt, `⌘G` / `⇧⌘G` also move to the next / previous match and
+`⌘C` / `⌘R` / `⌘U` toggle case sensitivity, regular expressions and whole-word
+matching. `⌘V` pastes into any prompt.
+
+Note that macOS Terminal and iTerm2 reserve the ⌘ key for their own menus and
+will not forward ⌘-combinations to goat. Use a terminal with a keyboard
+protocol that reports the Command key as a modifier (kitty, WezTerm, …) for
+these bindings to work.
+
 In the file browser:
 
 ```

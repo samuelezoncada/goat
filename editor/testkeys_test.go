@@ -25,6 +25,22 @@ func altRuneEvent(r rune) *tcell.EventKey {
 	return tcell.NewEventKey(tcell.KeyRune, r, tcell.ModAlt)
 }
 
+func cmdRuneEvent(r rune) *tcell.EventKey {
+	return tcell.NewEventKey(tcell.KeyRune, r, tcell.ModMeta)
+}
+
+func cmdShiftRuneEvent(r rune) *tcell.EventKey {
+	return tcell.NewEventKey(tcell.KeyRune, r, tcell.ModMeta|tcell.ModShift)
+}
+
+func cmdKeyEvent(k tcell.Key) *tcell.EventKey {
+	return tcell.NewEventKey(k, 0, tcell.ModMeta)
+}
+
+func cmdShiftKeyEvent(k tcell.Key) *tcell.EventKey {
+	return tcell.NewEventKey(k, 0, tcell.ModMeta|tcell.ModShift)
+}
+
 const (
 	tcellKeyEnter = tcell.KeyEnter
 	tcellKeyEsc   = tcell.KeyEsc

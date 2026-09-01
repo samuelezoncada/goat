@@ -171,6 +171,8 @@ func (e *Editor) promptKey(ev *tcell.EventKey) {
 	mod := ev.Modifiers()
 	ctrl := mod&tcell.ModCtrl != 0
 	alt := mod&tcell.ModAlt != 0
+	shift := mod&tcell.ModShift != 0
+	meta := mod&tcell.ModMeta != 0
 
 	if ev.Key() != tcell.KeyTab {
 		p.comp = nil
@@ -252,18 +254,30 @@ func (e *Editor) promptKey(ev *tcell.EventKey) {
 		e.promptInsert(e.clip)
 		return
 	case tcell.KeyRune:
+		if meta {
+			switch ev.Rune() {
+			case 'v':
+				e.promptInsert(e.clip)
+			case 'g':
+				if isSearchPrompt(p.label) {
+					if shift {
+						e.searchReverse()
+					} else {
+						e.searchNext()
+					}
+				}
+			case 'c', 'r', 'u':
+				if isSearchPrompt(p.label) {
+					e.toggleSearchFlag(ev.Rune())
+				}
+			}
+			return
+		}
 		if alt {
 			if isSearchPrompt(p.label) {
 				switch ev.Rune() {
-				case 'c':
-					e.search.caseSens = !e.search.caseSens
-					e.statusf("Case sensitivity: %v", e.search.caseSens)
-				case 'r':
-					e.search.regex = !e.search.regex
-					e.statusf("Regular expression: %v", e.search.regex)
-				case 'u':
-					e.search.wholeWord = !e.search.wholeWord
-					e.statusf("Whole word: %v", e.search.wholeWord)
+				case 'c', 'r', 'u':
+					e.toggleSearchFlag(ev.Rune())
 				default:
 					e.searchReverse()
 				}
@@ -281,6 +295,21 @@ func (e *Editor) promptKey(ev *tcell.EventKey) {
 		p.pos++
 		e.promptChanged(p)
 		return
+	}
+}
+
+// toggleSearchFlag toggles a search mode flag by its short key (c, r, u).
+func (e *Editor) toggleSearchFlag(r rune) {
+	switch r {
+	case 'c':
+		e.search.caseSens = !e.search.caseSens
+		e.statusf("Case sensitivity: %v", e.search.caseSens)
+	case 'r':
+		e.search.regex = !e.search.regex
+		e.statusf("Regular expression: %v", e.search.regex)
+	case 'u':
+		e.search.wholeWord = !e.search.wholeWord
+		e.statusf("Whole word: %v", e.search.wholeWord)
 	}
 }
 

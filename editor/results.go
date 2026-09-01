@@ -82,7 +82,7 @@ func (e *Editor) resultsKey(ev *tcell.EventKey) {
 			r.sel = len(r.locs) - 1
 		}
 	case tcell.KeyRune:
-		if ev.Modifiers()&tcell.ModAlt != 0 && ev.Rune() == 'd' {
+		if ev.Modifiers()&(tcell.ModAlt|tcell.ModMeta) != 0 && ev.Rune() == 'd' {
 			e.toggleResults()
 		}
 	}

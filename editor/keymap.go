@@ -171,6 +171,7 @@ func (e *Editor) handleNormalKey(ev *tcell.EventKey) {
 	ctrl := mod&tcell.ModCtrl != 0
 	shift := mod&tcell.ModShift != 0
 	alt := mod&tcell.ModAlt != 0
+	meta := mod&tcell.ModMeta != 0
 
 	// A status message belongs to the action that produced it: the next key
 	// clears it, so the filename and position come back into view. Handlers
@@ -231,25 +232,33 @@ func (e *Editor) handleNormalKey(ev *tcell.EventKey) {
 	case tcell.KeyEnter:
 		e.editAction(t.insertNewline)
 	case tcell.KeyUp:
-		if alt {
+		if meta {
+			e.selectMove(t.bufStart, shift)
+		} else if alt {
 			e.scrollUp()
 		} else {
 			e.selectMove(t.moveUp, shift)
 		}
 	case tcell.KeyDown:
-		if alt {
+		if meta {
+			e.selectMove(t.bufEnd, shift)
+		} else if alt {
 			e.scrollDown()
 		} else {
 			e.selectMove(t.moveDown, shift)
 		}
 	case tcell.KeyLeft:
-		if alt || ctrl {
+		if meta {
+			e.selectMove(t.home, shift)
+		} else if alt || ctrl {
 			e.selectMove(t.wordLeft, shift)
 		} else {
 			e.selectMove(t.moveLeft, shift)
 		}
 	case tcell.KeyRight:
-		if alt || ctrl {
+		if meta {
+			e.selectMove(t.end, shift)
+		} else if alt || ctrl {
 			e.selectMove(t.wordRight, shift)
 		} else {
 			e.selectMove(t.moveRight, shift)
@@ -291,6 +300,10 @@ func (e *Editor) handleNormalKey(ev *tcell.EventKey) {
 		}
 		if alt {
 			e.altRune(ev.Rune())
+			return
+		}
+		if meta {
+			e.cmdRune(ev.Rune(), shift)
 			return
 		}
 		if ev.Rune() >= 0x20 && ev.Rune() != 0x7f {
@@ -371,6 +384,58 @@ func (e *Editor) altRune(r rune) {
 	}
 }
 
+// cmdRune handles Command+<key> (macOS ⌘) extras.
+func (e *Editor) cmdRune(r rune, shift bool) {
+	if r >= '1' && r <= '9' {
+		e.gotoTab(int(r - '1'))
+		return
+	}
+	switch r {
+	case 'q':
+		e.exit()
+	case 'w':
+		e.closeCurrentTab()
+	case 'n', 't':
+		e.newTab()
+	case 's':
+		e.save()
+	case 'z':
+		if shift {
+			e.editAction(func() { e.active().redo() })
+		} else {
+			e.editAction(func() { e.active().undo() })
+		}
+	case 'x':
+		e.cut()
+	case 'c':
+		e.copySelection()
+	case 'v':
+		e.uncut()
+	case 'a':
+		e.selectAll()
+	case 'f':
+		e.beginSearch()
+	case 'g':
+		if shift {
+			e.searchReverse()
+		} else {
+			e.searchNext()
+		}
+	case 'r':
+		e.beginReplace()
+	case 'p':
+		e.openPicker()
+	case 'b':
+		e.browser.toggle()
+	case 'd':
+		e.gotoSymbol()
+	case 'l':
+		e.gotoLine()
+	case 'o':
+		e.readFile()
+	}
+}
+
 // browserKey handles keys while the file browser has focus.
 func (e *Editor) browserKey(ev *tcell.EventKey) {
 	b := e.browser
@@ -420,6 +485,23 @@ func (e *Editor) browserKey(ev *tcell.EventKey) {
 			switch ev.Rune() {
 			case 's':
 				b.toggle()
+			case 'q':
+				e.exit()
+			case 'n':
+				b.newFile()
+			case 'd':
+				b.newDir()
+			case 'r':
+				b.rename()
+			case 'x':
+				b.remove()
+			case 'p':
+				e.openPicker()
+			}
+			return
+		}
+		if ev.Modifiers()&tcell.ModMeta != 0 {
+			switch ev.Rune() {
 			case 'q':
 				e.exit()
 			case 'n':

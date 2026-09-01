@@ -549,6 +549,13 @@ func (e *Editor) pickerKey(ev *tcell.EventKey) {
 		if mod&tcell.ModCtrl != 0 {
 			return
 		}
+		if mod&tcell.ModMeta != 0 {
+			// ⌘V pastes into the filter box; other ⌘ keys are ignored.
+			if ev.Rune() == 'v' {
+				e.pickerInsert(e.clip)
+			}
+			return
+		}
 		r := ev.Rune()
 		if r >= 0x20 && r != 0x7f {
 			p.input = append(p.input, 0)
